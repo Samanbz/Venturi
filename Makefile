@@ -1,13 +1,64 @@
-BUILD_DIR = build
+# Venturi Makefile
+# Wraps CMake for convenient building and testing
 
-all: $(BUILD_DIR)/Makefile
-	$(MAKE) -C $(BUILD_DIR)
+BUILD_DIR := build
+CMAKE := cmake
+CTEST := ctest
 
-$(BUILD_DIR)/Makefile: CMakeLists.txt
-	mkdir -p $(BUILD_DIR)
-	cd $(BUILD_DIR) && cmake ..
+.PHONY: all build test clean rebuild configure run test-verbose benchmark help
 
+# Default target
+all: build
+
+# Configure CMake (run once or after CMakeLists.txt changes)
+configure:
+	@mkdir -p $(BUILD_DIR)
+	@cd $(BUILD_DIR) && $(CMAKE) ..
+
+# Build the project
+build: configure
+	@$(CMAKE) --build $(BUILD_DIR) -j$(shell nproc)
+
+# Run the main executable
+run: build
+	@./$(BUILD_DIR)/venturi
+
+# Run all tests
+test: build
+	@cd $(BUILD_DIR) && $(CTEST) --output-on-failure
+
+# Run tests with verbose output
+test-verbose: build
+	@cd $(BUILD_DIR) && $(CTEST) --output-on-failure --verbose
+
+# Run benchmarks
+benchmark: build
+	@if [ -f $(BUILD_DIR)/venturi_benchmarks ]; then \
+		./$(BUILD_DIR)/venturi_benchmarks; \
+	else \
+		echo "Benchmarks not built. Make sure Google Benchmark is installed."; \
+		exit 1; \
+	fi
+
+# Clean build artifacts
 clean:
-	rm -rf $(BUILD_DIR)
+	@rm -rf $(BUILD_DIR)
 
-.PHONY: all clean
+# Full rebuild
+rebuild: clean build
+
+# Help
+help:
+	@echo "Venturi Build System"
+	@echo ""
+	@echo "Targets:"
+	@echo "  all          - Build the project (default)"
+	@echo "  build        - Build the project"
+	@echo "  run          - Build and run the main executable"
+	@echo "  test         - Build and run all tests"
+	@echo "  test-verbose - Run tests with verbose output"
+	@echo "  benchmark    - Run performance benchmarks"
+	@echo "  clean        - Remove build directory"
+	@echo "  rebuild      - Clean and rebuild"
+	@echo "  configure    - Run CMake configuration"
+	@echo "  help         - Show this help message"
