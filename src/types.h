@@ -7,10 +7,16 @@ struct MarketState {
     float d_price;     // S_t, current asset price
     float d_pressure;  // mu_t, current market pressure
 
-    float* d_inventory;  // Q_t^a, agent inventories
-    float* d_cash;       // X_t^a, agent cash balances
-    float* d_speed;      // nu_t^a, agent trading speeds
-    float* d_density;    // rho_t^a, agent local densities
+    float* d_inventory;       // Q_t^a, agent inventories
+    float* d_cash;            // X_t^a, agent cash balances
+    float* d_execution_cost;  // \delta_t^a, agent execution costs
+    float* d_speed;           // nu_t^a, agent trading speeds
+    float* d_local_density;   // rho_t^a, agent local densities
+
+    int* d_cell_start;   // Spatial grid cell start indices
+    int* d_cell_end;     // Spatial grid cell end indices
+    int* d_agent_hash;   // Agent's cell indices
+    int* d_agent_index;  // Agent indices sorted by cell
 
     float* d_risk_aversion;    // phi^a, agent risk aversion parameters
     curandState* d_rngStates;  // RNG states for each agent (persistent)
@@ -23,6 +29,9 @@ struct MarketParams {
     float permanent_impact;        // alpha, permanent market impact factor
     float temporary_impact;        // kappa, temporary market impact factor
     float congestion_sensitivity;  // beta, congestion sensitivity factor
+
+    float sph_smoothing_radius;  // radius for SPH smoothing
+    int hash_table_size;         // size of spatial hash table
 
     float decay_rate;   // decay rate for inventory initialization
     float risk_mean;    // mean for risk aversion initialization

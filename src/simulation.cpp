@@ -4,6 +4,9 @@
 
 #include <ctime>
 
+#include "thrust/device_ptr.h"
+#include "thrust/sort.h"
+
 Simulation::Simulation(const MarketParams& params) : params_(params) {
     // Copy MarketParams to device constant memory
     copyParamsToDevice(params_);
@@ -18,9 +21,15 @@ Simulation::Simulation(const MarketParams& params) : params_(params) {
     cudaMalloc(&state_.d_inventory, size);
     cudaMalloc(&state_.d_cash, size);
     cudaMalloc(&state_.d_speed, size);
-    cudaMalloc(&state_.d_density, size);
+    cudaMalloc(&state_.d_local_density, size);
     cudaMalloc(&state_.d_risk_aversion, size);
+    cudaMalloc(&state_.d_execution_cost, size);
     cudaMalloc(&state_.d_rngStates, params.num_agents * sizeof(curandState));
+
+    cudaMalloc(&state_.d_cell_start, params.num_agents * sizeof(int));
+    cudaMalloc(&state_.d_cell_end, params.num_agents * sizeof(int));
+    cudaMalloc(&state_.d_agent_hash, params.num_agents * sizeof(int));
+    cudaMalloc(&state_.d_agent_index, params.num_agents * sizeof(int));
 
     // Initialize RNG states once with time-based seed
     unsigned long long seed = static_cast<unsigned long long>(time(nullptr));
@@ -31,13 +40,34 @@ Simulation::Simulation(const MarketParams& params) : params_(params) {
     launchInitializeRiskAversions(state_.d_risk_aversion, state_.d_rngStates, params.num_agents);
     cudaMemset(state_.d_cash, 0, size);
     cudaMemset(state_.d_speed, 0, size);
-    cudaMemset(state_.d_density, 0, size);
+    cudaMemset(state_.d_local_density, 0, size);
+    cudaMemset(state_.d_execution_cost, 0, size);
+}
+
+void Simulation::computeLocalDensities() {
+    // Reset cell bounds for spatial hashing. Critical step, since many cells may be empty.
+    cudaMemset(state_.d_cell_start, -1, params_.hash_table_size * sizeof(int));
+    cudaMemset(state_.d_cell_end, -1, params_.hash_table_size * sizeof(int));
+    // Compute spatial hashes for all agents based on their current inventories and execution costs
+    launchCalculateSpatialHash(state_.d_inventory, state_.d_execution_cost, state_.d_agent_hash,
+                               state_.d_agent_index, params_.num_agents);
+    // Identify the start and end indices of agents within each spatial grid cell
+    launchFindCellBounds(state_.d_agent_hash, state_.d_cell_start, state_.d_cell_end,
+                         params_.num_agents);
+    // Sort agents by spatial hash
+    thrust::device_ptr<int> t_hashes(state_.d_agent_hash);
+    thrust::device_ptr<int> t_indices(state_.d_agent_index);
+    thrust::sort_by_key(t_hashes, t_hashes + params_.num_agents, t_indices);
+
+    // Compute local densities for each agent using SPH within their spatial cells
+    launchComputeLocalDensities(state_.d_inventory, state_.d_execution_cost, state_.d_cell_start,
+                                state_.d_cell_end, state_.d_local_density);
 }
 
 void Simulation::step() {
     state_.dt++;
 
-    // computeLocalDensities();
+    computeLocalDensities();
     // computePressure();
     // computeVelocities();
     // computePrice();
@@ -50,7 +80,7 @@ Simulation::~Simulation() {
     cudaFree(state_.d_inventory);
     cudaFree(state_.d_cash);
     cudaFree(state_.d_speed);
-    cudaFree(state_.d_density);
+    cudaFree(state_.d_local_density);
     cudaFree(state_.d_risk_aversion);
     cudaFree(state_.d_rngStates);
 }
