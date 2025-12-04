@@ -1,3 +1,6 @@
+#pragma once
+
+#include <curand_kernel.h>
 
 struct MarketState {
     int dt;            // t, current time step
@@ -9,7 +12,8 @@ struct MarketState {
     float* d_speed;      // nu_t^a, agent trading speeds
     float* d_density;    // rho_t^a, agent local densities
 
-    float* d_risk_aversion;  // phi^a, agent risk aversion parameters
+    float* d_risk_aversion;    // phi^a, agent risk aversion parameters
+    curandState* d_rngStates;  // RNG states for each agent (persistent)
 };
 
 struct MarketParams {
@@ -20,6 +24,7 @@ struct MarketParams {
     float temporary_impact;        // kappa, temporary market impact factor
     float congestion_sensitivity;  // beta, congestion sensitivity factor
 
-    float inventory_mean;    // Mean of initial inventory distribution
-    float inventory_stddev;  // Stddev of initial inventory distribution
+    float decay_rate;   // decay rate for inventory initialization
+    float risk_mean;    // mean for risk aversion initialization
+    float risk_stddev;  // standard deviation for risk aversion initialization
 };
