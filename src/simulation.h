@@ -16,9 +16,12 @@ extern void launchCalculateSpatialHash(const float* d_inventory, const float* d_
                                        int* d_agent_hash, int* d_agent_indices, int num_agents);
 extern void launchFindCellBounds(const int* d_sorted_hashes, int* d_cell_start, int* d_cell_end,
                                  int num_agents);
+
+extern void launchSortByKey(int* d_keys, int* d_values, int num_agents);
+extern void launchReorderData(const MarketState& state, int num_agents);
 extern void launchComputeLocalDensities(const float* d_inventory, const float* d_execution_cost,
-                                        const int* d_cell_start, const int* d_cell_end,
-                                        float* d_local_density);
+                                        const int* d_cell_start_idx, const int* d_cell_end_idxs,
+                                        float* d_local_density, int num_agents);
 
 class Simulation {
    public:

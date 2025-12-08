@@ -4,9 +4,6 @@
 
 #include <ctime>
 
-#include "thrust/device_ptr.h"
-#include "thrust/sort.h"
-
 Simulation::Simulation(const MarketParams& params) : params_(params) {
     // Copy MarketParams to device constant memory
     copyParamsToDevice(params_);
@@ -51,17 +48,20 @@ void Simulation::computeLocalDensities() {
     // Compute spatial hashes for all agents based on their current inventories and execution costs
     launchCalculateSpatialHash(state_.d_inventory, state_.d_execution_cost, state_.d_agent_hash,
                                state_.d_agent_index, params_.num_agents);
+
+    // Sort agents by spatial hash
+    launchSortByKey(state_.d_agent_hash, state_.d_agent_index, params_.num_agents);
+
     // Identify the start and end indices of agents within each spatial grid cell
     launchFindCellBounds(state_.d_agent_hash, state_.d_cell_start, state_.d_cell_end,
                          params_.num_agents);
-    // Sort agents by spatial hash
-    thrust::device_ptr<int> t_hashes(state_.d_agent_hash);
-    thrust::device_ptr<int> t_indices(state_.d_agent_index);
-    thrust::sort_by_key(t_hashes, t_hashes + params_.num_agents, t_indices);
+
+    launchReorderData(state_, params_.num_agents);
 
     // Compute local densities for each agent using SPH within their spatial cells
-    launchComputeLocalDensities(state_.d_inventory, state_.d_execution_cost, state_.d_cell_start,
-                                state_.d_cell_end, state_.d_local_density);
+    launchComputeLocalDensities(state_.d_inventory_sorted, state_.d_execution_cost_sorted,
+                                state_.d_cell_start, state_.d_cell_end, state_.d_local_density,
+                                params_.num_agents);
 }
 
 void Simulation::step() {
