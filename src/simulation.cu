@@ -25,39 +25,42 @@ __global__ void setupRNGKernel(curandState* state, unsigned long long seed) {
     curand_init(seed, idx, 0, &state[idx]);
 }
 
-// Kernel to initialize inventories using pre-initialized RNG states
-__global__ void initializeInventoriesKernel(float* inventory, curandState* globalState) {
+// Kernel to initialize array with exponential distribution (lambda)
+__global__ void initializeExponentialKernel(float* data, float lambda, curandState* globalState) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= d_params.num_agents)
         return;
 
-    // Load state from global memory to local registers
     curandState localState = globalState[idx];
-
-    // Generate uniform random number in (0, 1]
     float u = curand_uniform(&localState);
-
-    // Inverse transform: -ln(U) / rate gives exponential distribution
-    inventory[idx] = -logf(u) / d_params.decay_rate;
-
-    // Save state back for next use
+    // curand_uniform returns (0.0, 1.0]
+    data[idx] = -logf(u) / lambda;
     globalState[idx] = localState;
 }
 
-// Kernel to initialize risk aversions using pre-initialized RNG states
-__global__ void initializeRiskAversionsKernel(float* risk_aversion, curandState* globalState) {
+// Kernel to initialize array with uniform distribution [min, max]
+__global__ void initializeUniformKernel(float* data, float min, float max,
+                                        curandState* globalState) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= d_params.num_agents)
         return;
 
-    // Load state from global memory to local registers
     curandState localState = globalState[idx];
+    float u = curand_uniform(&localState);
+    data[idx] = min + u * (max - min);
+    globalState[idx] = localState;
+}
 
-    // Generate normally distributed random number
-    float rand_normal = curand_normal(&localState);
-    risk_aversion[idx] = d_params.risk_mean + d_params.risk_stddev * rand_normal;
+// Kernel to initialize array with normal distribution (mean, stddev)
+__global__ void initializeNormalKernel(float* data, float mean, float stddev,
+                                       curandState* globalState) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= d_params.num_agents)
+        return;
 
-    // Save state back for next use
+    curandState localState = globalState[idx];
+    float n = curand_normal(&localState);
+    data[idx] = mean + n * stddev;
     globalState[idx] = localState;
 }
 
@@ -176,21 +179,28 @@ void setupRNG(curandState* d_rngStates, int num_agents, unsigned long long seed)
     cudaDeviceSynchronize();
 }
 
-void launchInitializeInventories(float* d_inventory, curandState* d_rngStates, int num_agents) {
+void launchInitializeExponential(float* d_data, float lambda, curandState* d_rngStates,
+                                 int num_agents) {
     int blockSize = 256;
     int numBlocks = (num_agents + blockSize - 1) / blockSize;
 
-    initializeInventoriesKernel<<<numBlocks, blockSize>>>(d_inventory, d_rngStates);
-    // No sync here - letting caller control synchronization for better performance
+    initializeExponentialKernel<<<numBlocks, blockSize>>>(d_data, lambda, d_rngStates);
 }
 
-void launchInitializeRiskAversions(float* d_risk_aversion, curandState* d_rngStates,
-                                   int num_agents) {
+void launchInitializeUniform(float* d_data, float min, float max, curandState* d_rngStates,
+                             int num_agents) {
     int blockSize = 256;
     int numBlocks = (num_agents + blockSize - 1) / blockSize;
 
-    initializeRiskAversionsKernel<<<numBlocks, blockSize>>>(d_risk_aversion, d_rngStates);
-    // No sync here - letting caller control synchronization for better performance
+    initializeUniformKernel<<<numBlocks, blockSize>>>(d_data, min, max, d_rngStates);
+}
+
+void launchInitializeNormal(float* d_data, float mean, float stddev, curandState* d_rngStates,
+                            int num_agents) {
+    int blockSize = 256;
+    int numBlocks = (num_agents + blockSize - 1) / blockSize;
+
+    initializeNormalKernel<<<numBlocks, blockSize>>>(d_data, mean, stddev, d_rngStates);
 }
 
 void launchCalculateSpatialHash(const float* d_inventory, const float* d_execution_cost,
@@ -230,14 +240,16 @@ void launchSortByKey(int* d_keys, int* d_values, int num_agents) {
     thrust::sort_by_key(t_keys, t_keys + num_agents, t_values);
 }
 
-void launchReorderData(const MarketState& state, int num_agents) {
+void launchReorderData(const int* sorted_indices, const float* in_inventory,
+                       const float* in_execution_cost, const float* in_cash, const float* in_speed,
+                       float* out_inventory, float* out_execution_cost, float* out_cash,
+                       float* out_speed, int num_agents) {
     int blockSize = 256;
     int numBlocks = (num_agents + blockSize - 1) / blockSize;
 
-    reorderDataKernel<<<numBlocks, blockSize>>>(
-        state.d_agent_index, state.d_inventory, state.d_execution_cost, state.d_cash, state.d_speed,
-        state.d_inventory_sorted, state.d_execution_cost_sorted, state.d_cash_sorted,
-        state.d_speed_sorted);
+    reorderDataKernel<<<numBlocks, blockSize>>>(sorted_indices, in_inventory, in_execution_cost,
+                                                in_cash, in_speed, out_inventory,
+                                                out_execution_cost, out_cash, out_speed);
     // No sync here - letting caller control synchronization for better performance
 }
 

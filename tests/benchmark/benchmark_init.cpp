@@ -46,8 +46,8 @@ class InitFixture : public benchmark::Fixture {
 
 BENCHMARK_DEFINE_F(InitFixture, InitializeInventories)(benchmark::State& state) {
     for (auto _ : state) {
-        launchInitializeInventories(g_init_state.d_inventory, g_init_state.d_rngStates,
-                                    g_init_state.params.num_agents);
+        launchInitializeExponential(g_init_state.d_inventory, g_init_state.params.decay_rate,
+                                    g_init_state.d_rngStates, g_init_state.params.num_agents);
         cudaDeviceSynchronize();
     }
 
@@ -57,8 +57,9 @@ BENCHMARK_DEFINE_F(InitFixture, InitializeInventories)(benchmark::State& state) 
 
 BENCHMARK_DEFINE_F(InitFixture, InitializeRiskAversions)(benchmark::State& state) {
     for (auto _ : state) {
-        launchInitializeRiskAversions(g_init_state.d_risk_aversion, g_init_state.d_rngStates,
-                                      g_init_state.params.num_agents);
+        launchInitializeNormal(g_init_state.d_risk_aversion, g_init_state.params.risk_mean,
+                               g_init_state.params.risk_stddev, g_init_state.d_rngStates,
+                               g_init_state.params.num_agents);
         cudaDeviceSynchronize();
     }
 
@@ -92,8 +93,8 @@ BENCHMARK_DEFINE_F(InitFixture, InitInventories_DecayRateVariation)(benchmark::S
     copyParamsToDevice(g_init_state.params);
 
     for (auto _ : state) {
-        launchInitializeInventories(g_init_state.d_inventory, g_init_state.d_rngStates,
-                                    g_init_state.params.num_agents);
+        launchInitializeExponential(g_init_state.d_inventory, g_init_state.params.decay_rate,
+                                    g_init_state.d_rngStates, g_init_state.params.num_agents);
         cudaDeviceSynchronize();
     }
 
@@ -116,8 +117,9 @@ BENCHMARK_DEFINE_F(InitFixture, InitRiskAversions_StdDevVariation)(benchmark::St
     copyParamsToDevice(g_init_state.params);
 
     for (auto _ : state) {
-        launchInitializeRiskAversions(g_init_state.d_risk_aversion, g_init_state.d_rngStates,
-                                      g_init_state.params.num_agents);
+        launchInitializeNormal(g_init_state.d_risk_aversion, g_init_state.params.risk_mean,
+                               g_init_state.params.risk_stddev, g_init_state.d_rngStates,
+                               g_init_state.params.num_agents);
         cudaDeviceSynchronize();
     }
 
@@ -138,10 +140,11 @@ BENCHMARK_REGISTER_F(InitFixture, InitRiskAversions_StdDevVariation)
 
 BENCHMARK_DEFINE_F(InitFixture, CombinedInitialization)(benchmark::State& state) {
     for (auto _ : state) {
-        launchInitializeInventories(g_init_state.d_inventory, g_init_state.d_rngStates,
-                                    g_init_state.params.num_agents);
-        launchInitializeRiskAversions(g_init_state.d_risk_aversion, g_init_state.d_rngStates,
-                                      g_init_state.params.num_agents);
+        launchInitializeExponential(g_init_state.d_inventory, g_init_state.params.decay_rate,
+                                    g_init_state.d_rngStates, g_init_state.params.num_agents);
+        launchInitializeNormal(g_init_state.d_risk_aversion, g_init_state.params.risk_mean,
+                               g_init_state.params.risk_stddev, g_init_state.d_rngStates,
+                               g_init_state.params.num_agents);
         cudaDeviceSynchronize();
     }
 

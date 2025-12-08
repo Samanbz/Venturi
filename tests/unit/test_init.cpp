@@ -54,7 +54,7 @@ class SimulationFixture : public BaseTestFixture {
 
 TEST_F(SimulationFixture, InventoriesAreAllPositive) {
     // Exponential distribution should produce only positive values
-    launchInitializeInventories(d_inventory, d_rngStates, params.num_agents);
+    launchInitializeExponential(d_inventory, params.decay_rate, d_rngStates, params.num_agents);
     copyInventoryToHost();
 
     for (int i = 0; i < params.num_agents; ++i) {
@@ -65,7 +65,7 @@ TEST_F(SimulationFixture, InventoriesAreAllPositive) {
 TEST_F(SimulationFixture, InventoriesMeanApproximatesExpectedValue) {
     // For exponential distribution: E[X] = 1/lambda
     // With decay_rate = 1.0, expected mean ≈ 1.0
-    launchInitializeInventories(d_inventory, d_rngStates, params.num_agents);
+    launchInitializeExponential(d_inventory, params.decay_rate, d_rngStates, params.num_agents);
     copyInventoryToHost();
 
     float sum = std::accumulate(h_inventory.begin(), h_inventory.end(), 0.0f);
@@ -82,7 +82,7 @@ TEST_F(SimulationFixture, InventoriesWithDifferentDecayRate) {
     params.decay_rate = 2.0f;
     copyParamsToDevice(params);
 
-    launchInitializeInventories(d_inventory, d_rngStates, params.num_agents);
+    launchInitializeExponential(d_inventory, params.decay_rate, d_rngStates, params.num_agents);
     copyInventoryToHost();
 
     float sum = std::accumulate(h_inventory.begin(), h_inventory.end(), 0.0f);
@@ -94,13 +94,13 @@ TEST_F(SimulationFixture, InventoriesWithDifferentDecayRate) {
 
 TEST_F(SimulationFixture, InventoriesAreReproducibleWithSameSeed) {
     // Same seed should produce same results
-    launchInitializeInventories(d_inventory, d_rngStates, params.num_agents);
+    launchInitializeExponential(d_inventory, params.decay_rate, d_rngStates, params.num_agents);
     copyInventoryToHost();
     std::vector<float> first_run = h_inventory;
 
     // Re-initialize RNG with same seed
     setupRNG(d_rngStates, params.num_agents, 42ULL);
-    launchInitializeInventories(d_inventory, d_rngStates, params.num_agents);
+    launchInitializeExponential(d_inventory, params.decay_rate, d_rngStates, params.num_agents);
     copyInventoryToHost();
 
     for (int i = 0; i < params.num_agents; ++i) {
@@ -110,13 +110,13 @@ TEST_F(SimulationFixture, InventoriesAreReproducibleWithSameSeed) {
 }
 
 TEST_F(SimulationFixture, InventoriesDifferWithDifferentSeeds) {
-    launchInitializeInventories(d_inventory, d_rngStates, params.num_agents);
+    launchInitializeExponential(d_inventory, params.decay_rate, d_rngStates, params.num_agents);
     copyInventoryToHost();
     std::vector<float> first_run = h_inventory;
 
     // Re-initialize RNG with different seed
     setupRNG(d_rngStates, params.num_agents, 43ULL);
-    launchInitializeInventories(d_inventory, d_rngStates, params.num_agents);
+    launchInitializeExponential(d_inventory, params.decay_rate, d_rngStates, params.num_agents);
     copyInventoryToHost();
 
     // At least some values should be different
@@ -132,7 +132,8 @@ TEST_F(SimulationFixture, InventoriesDifferWithDifferentSeeds) {
 // Tests for initializeRiskAversions kernel (Normal Distribution)
 
 TEST_F(SimulationFixture, RiskAversionsMeanApproximatesExpectedValue) {
-    launchInitializeRiskAversions(d_risk_aversion, d_rngStates, params.num_agents);
+    launchInitializeNormal(d_risk_aversion, params.risk_mean, params.risk_stddev, d_rngStates,
+                           params.num_agents);
     copyRiskAversionToHost();
 
     float sum = std::accumulate(h_risk_aversion.begin(), h_risk_aversion.end(), 0.0f);
@@ -144,7 +145,8 @@ TEST_F(SimulationFixture, RiskAversionsMeanApproximatesExpectedValue) {
 }
 
 TEST_F(SimulationFixture, RiskAversionsStdDevApproximatesExpectedValue) {
-    launchInitializeRiskAversions(d_risk_aversion, d_rngStates, params.num_agents);
+    launchInitializeNormal(d_risk_aversion, params.risk_mean, params.risk_stddev, d_rngStates,
+                           params.num_agents);
     copyRiskAversionToHost();
 
     // Calculate sample mean
@@ -164,13 +166,15 @@ TEST_F(SimulationFixture, RiskAversionsStdDevApproximatesExpectedValue) {
 }
 
 TEST_F(SimulationFixture, RiskAversionsAreReproducibleWithSameSeed) {
-    launchInitializeRiskAversions(d_risk_aversion, d_rngStates, params.num_agents);
+    launchInitializeNormal(d_risk_aversion, params.risk_mean, params.risk_stddev, d_rngStates,
+                           params.num_agents);
     copyRiskAversionToHost();
     std::vector<float> first_run = h_risk_aversion;
 
     // Re-initialize RNG with same seed
     setupRNG(d_rngStates, params.num_agents, 42ULL);
-    launchInitializeRiskAversions(d_risk_aversion, d_rngStates, params.num_agents);
+    launchInitializeNormal(d_risk_aversion, params.risk_mean, params.risk_stddev, d_rngStates,
+                           params.num_agents);
     copyRiskAversionToHost();
 
     for (int i = 0; i < params.num_agents; ++i) {
@@ -184,7 +188,8 @@ TEST_F(SimulationFixture, RiskAversionsWithDifferentParameters) {
     params.risk_stddev = 0.5f;
     copyParamsToDevice(params);
 
-    launchInitializeRiskAversions(d_risk_aversion, d_rngStates, params.num_agents);
+    launchInitializeNormal(d_risk_aversion, params.risk_mean, params.risk_stddev, d_rngStates,
+                           params.num_agents);
     copyRiskAversionToHost();
 
     float sum = std::accumulate(h_risk_aversion.begin(), h_risk_aversion.end(), 0.0f);
@@ -211,8 +216,9 @@ TEST_F(SimulationFixture, SmallNumberOfAgents) {
     cudaMalloc(&d_small_rng, params.num_agents * sizeof(curandState));
 
     setupRNG(d_small_rng, params.num_agents, 12345ULL);
-    launchInitializeInventories(d_small_inv, d_small_rng, params.num_agents);
-    launchInitializeRiskAversions(d_small_risk, d_small_rng, params.num_agents);
+    launchInitializeExponential(d_small_inv, params.decay_rate, d_small_rng, params.num_agents);
+    launchInitializeNormal(d_small_risk, params.risk_mean, params.risk_stddev, d_small_rng,
+                           params.num_agents);
 
     cudaMemcpy(h_inventory.data(), d_small_inv, params.num_agents * sizeof(float),
                cudaMemcpyDeviceToHost);
@@ -243,7 +249,7 @@ TEST_F(SimulationFixture, LargeNumberOfAgents) {
     cudaMalloc(&d_large_rng, params.num_agents * sizeof(curandState));
 
     setupRNG(d_large_rng, params.num_agents, 12345ULL);
-    launchInitializeInventories(d_large_inv, d_large_rng, params.num_agents);
+    launchInitializeExponential(d_large_inv, params.decay_rate, d_large_rng, params.num_agents);
 
     // Spot check a few values
     std::vector<float> sample(100);

@@ -33,8 +33,10 @@ Simulation::Simulation(const MarketParams& params) : params_(params) {
     setupRNG(state_.d_rngStates, params.num_agents, seed);
 
     // Initialize device memory using persistent RNG states
-    launchInitializeInventories(state_.d_inventory, state_.d_rngStates, params.num_agents);
-    launchInitializeRiskAversions(state_.d_risk_aversion, state_.d_rngStates, params.num_agents);
+    launchInitializeExponential(state_.d_inventory, params.decay_rate, state_.d_rngStates,
+                                params.num_agents);
+    launchInitializeNormal(state_.d_risk_aversion, params.risk_mean, params.risk_stddev,
+                           state_.d_rngStates, params.num_agents);
     cudaMemset(state_.d_cash, 0, size);
     cudaMemset(state_.d_speed, 0, size);
     cudaMemset(state_.d_local_density, 0, size);
@@ -56,7 +58,10 @@ void Simulation::computeLocalDensities() {
     launchFindCellBounds(state_.d_agent_hash, state_.d_cell_start, state_.d_cell_end,
                          params_.num_agents);
 
-    launchReorderData(state_, params_.num_agents);
+    launchReorderData(state_.d_agent_index, state_.d_inventory, state_.d_execution_cost,
+                      state_.d_cash, state_.d_speed, state_.d_inventory_sorted,
+                      state_.d_execution_cost_sorted, state_.d_cash_sorted, state_.d_speed_sorted,
+                      params_.num_agents);
 
     // Compute local densities for each agent using SPH within their spatial cells
     launchComputeLocalDensities(state_.d_inventory_sorted, state_.d_execution_cost_sorted,
