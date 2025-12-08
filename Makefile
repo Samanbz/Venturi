@@ -13,7 +13,7 @@ all: build
 # Configure CMake (run once or after CMakeLists.txt changes)
 configure:
 	@mkdir -p $(BUILD_DIR)
-	@cd $(BUILD_DIR) && $(CMAKE) ..
+	@cd $(BUILD_DIR) && $(CMAKE) -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc ..
 
 # Build the project
 build: configure

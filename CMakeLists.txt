@@ -2,16 +2,14 @@ cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
 
 project(Venturi LANGUAGES CXX CUDA)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
-find_package(CUDA 11.5 REQUIRED)
+find_package(CUDAToolkit REQUIRED)
 find_package(GTest REQUIRED)
 find_package(benchmark QUIET)
-
-include_directories(${CUDA_INCLUDE_DIRS})
 
 # Main library (shared between main executable and tests)
 add_library(venturi_lib
@@ -19,7 +17,7 @@ add_library(venturi_lib
     src/simulation.cu
 )
 target_include_directories(venturi_lib PUBLIC ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(venturi_lib ${CUDA_LIBRARIES} curand)
+target_link_libraries(venturi_lib CUDA::cudart CUDA::curand)
 
 # Main executable
 add_executable(venturi src/main.cpp)
@@ -28,14 +26,15 @@ target_link_libraries(venturi venturi_lib)
 # Testing
 enable_testing()
 
-# Automatically discover unit test files (excluding benchmarks)
-file(GLOB_RECURSE TEST_SOURCES "tests/unit/*.cpp")
-file(GLOB_RECURSE FIXTURE_SOURCES "tests/fixtures/*.cpp")
-# Exclude benchmark fixture from unit tests
-list(FILTER FIXTURE_SOURCES EXCLUDE REGEX ".*simulation_benchmark_fixture\\.cpp$")
+# Discover ALL cpp files in tests/
+file(GLOB_RECURSE ALL_TEST_FILES "tests/*.cpp")
 
+# Filter OUT the benchmark files
+set(TEST_SOURCES ${ALL_TEST_FILES})
+list(FILTER TEST_SOURCES EXCLUDE REGEX ".*tests/benchmark/.*")
+
+# Create the Test Executable with the filtered list
 add_executable(venturi_tests
-    ${FIXTURE_SOURCES}
     ${TEST_SOURCES}
 )
 target_link_libraries(venturi_tests venturi_lib GTest::gtest GTest::gtest_main)
@@ -53,7 +52,6 @@ if(benchmark_FOUND)
     
     add_executable(venturi_benchmarks
         ${BENCHMARK_SOURCES}
-        tests/fixtures/simulation_benchmark_fixture.cpp
     )
     target_link_libraries(venturi_benchmarks 
         venturi_lib 
