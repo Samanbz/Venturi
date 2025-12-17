@@ -22,10 +22,12 @@ class BaseTestFixture : public ::testing::Test {
         // Default parameters common to most tests
         params.num_agents = 10000;
         params.num_steps = 100;
+        params.time_delta = 1.0f;
         params.price_init = 100.0f;
         params.permanent_impact = 0.1f;
         params.temporary_impact = 0.05f;
         params.congestion_sensitivity = 0.01f;
+        params.price_randomness_stddev = 0.1f;
         params.decay_rate = 1.0f;
         params.risk_mean = 0.5f;
         params.risk_stddev = 0.1f;

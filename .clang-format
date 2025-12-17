@@ -19,3 +19,4 @@ AllowShortLoopsOnASingleLine: false
 AllowShortCaseLabelsOnASingleLine: false
 ReflowComments: true
 Cpp11BracedListStyle: true
+BinPackParameters: false

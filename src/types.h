@@ -32,12 +32,14 @@ struct MarketState {
 };
 
 struct MarketParams {
-    int num_agents;                // N, number of trading agents
-    int num_steps;                 // T, number of simulation steps
-    float price_init;              // S_0, initial asset price
-    float permanent_impact;        // alpha, permanent market impact factor
-    float temporary_impact;        // kappa, temporary market impact factor
-    float congestion_sensitivity;  // beta, congestion sensitivity factor
+    int num_agents;                 // N, number of trading agents
+    int num_steps;                  // T, number of simulation steps
+    float time_delta;               // simulation time step size
+    float price_init;               // S_0, initial asset price
+    float permanent_impact;         // alpha, permanent market impact factor
+    float temporary_impact;         // kappa, temporary market impact factor
+    float congestion_sensitivity;   // beta, congestion sensitivity factor
+    float price_randomness_stddev;  // standard deviation of price brownian motion
 
     float sph_smoothing_radius;  // radius for SPH smoothing
     int hash_table_size;         // size of spatial hash table

@@ -41,7 +41,9 @@ __global__ void initializeExponentialKernel(float* data, float lambda, curandSta
 }
 
 // Kernel to initialize array with uniform distribution [min, max]
-__global__ void initializeUniformKernel(float* data, float min, float max,
+__global__ void initializeUniformKernel(float* data,
+                                        float min,
+                                        float max,
                                         curandState* globalState) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= d_params.num_agents)
@@ -54,7 +56,9 @@ __global__ void initializeUniformKernel(float* data, float min, float max,
 }
 
 // Kernel to initialize array with normal distribution (mean, stddev)
-__global__ void initializeNormalKernel(float* data, float mean, float stddev,
+__global__ void initializeNormalKernel(float* data,
+                                       float mean,
+                                       float stddev,
                                        curandState* globalState) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= d_params.num_agents)
@@ -66,8 +70,10 @@ __global__ void initializeNormalKernel(float* data, float mean, float stddev,
     globalState[idx] = localState;
 }
 
-__global__ void calculateSpatialHashKernel(const float* inventory, const float* execution_cost,
-                                           int* agent_hash, int* agent_indices) {
+__global__ void calculateSpatialHashKernel(const float* inventory,
+                                           const float* execution_cost,
+                                           int* agent_hash,
+                                           int* agent_indices) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= d_params.num_agents)
         return;
@@ -91,8 +97,10 @@ __global__ void reorderDataKernel(const int* __restrict__ sorted_indices,
                                   const float* __restrict__ in_cash,
                                   const float* __restrict__ in_speed,
                                   // Output Arrays (Write-Only)
-                                  float* __restrict__ out_inventory, float* __restrict__ out_cost,
-                                  float* __restrict__ out_cash, float* __restrict__ out_speed) {
+                                  float* __restrict__ out_inventory,
+                                  float* __restrict__ out_cost,
+                                  float* __restrict__ out_cash,
+                                  float* __restrict__ out_speed) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= d_params.num_agents)
         return;
@@ -123,8 +131,8 @@ __global__ void findCellBoundsKernel(const int* sorted_hashes, int* cell_start, 
     }
 }
 
-__device__ inline float computeInteraction(float my_inv, float my_cost, float n_inv, float n_cost,
-                                           float h2, float poly6) {
+__device__ inline float computeInteraction(
+    float my_inv, float my_cost, float n_inv, float n_cost, float h2, float poly6) {
     float d_inv = my_inv - n_inv;
     float d_cost = my_cost - n_cost;
     float r2 = d_inv * d_inv + d_cost * d_cost;
@@ -181,7 +189,9 @@ void setupRNG(curandState* d_rngStates, int num_agents, unsigned long long seed)
     cudaDeviceSynchronize();
 }
 
-void launchInitializeExponential(float* d_data, float lambda, curandState* d_rngStates,
+void launchInitializeExponential(float* d_data,
+                                 float lambda,
+                                 curandState* d_rngStates,
                                  int num_agents) {
     int blockSize = 256;
     int numBlocks = (num_agents + blockSize - 1) / blockSize;
@@ -189,24 +199,27 @@ void launchInitializeExponential(float* d_data, float lambda, curandState* d_rng
     initializeExponentialKernel<<<numBlocks, blockSize>>>(d_data, lambda, d_rngStates);
 }
 
-void launchInitializeUniform(float* d_data, float min, float max, curandState* d_rngStates,
-                             int num_agents) {
+void launchInitializeUniform(
+    float* d_data, float min, float max, curandState* d_rngStates, int num_agents) {
     int blockSize = 256;
     int numBlocks = (num_agents + blockSize - 1) / blockSize;
 
     initializeUniformKernel<<<numBlocks, blockSize>>>(d_data, min, max, d_rngStates);
 }
 
-void launchInitializeNormal(float* d_data, float mean, float stddev, curandState* d_rngStates,
-                            int num_agents) {
+void launchInitializeNormal(
+    float* d_data, float mean, float stddev, curandState* d_rngStates, int num_agents) {
     int blockSize = 256;
     int numBlocks = (num_agents + blockSize - 1) / blockSize;
 
     initializeNormalKernel<<<numBlocks, blockSize>>>(d_data, mean, stddev, d_rngStates);
 }
 
-void launchCalculateSpatialHash(const float* d_inventory, const float* d_execution_cost,
-                                int* d_agent_hash, int* d_agent_indices, int num_agents) {
+void launchCalculateSpatialHash(const float* d_inventory,
+                                const float* d_execution_cost,
+                                int* d_agent_hash,
+                                int* d_agent_indices,
+                                int num_agents) {
     int blockSize = 256;
     int numBlocks = (num_agents + blockSize - 1) / blockSize;
 
@@ -215,7 +228,9 @@ void launchCalculateSpatialHash(const float* d_inventory, const float* d_executi
     // No sync here - letting caller control synchronization for better performance
 }
 
-void launchFindCellBounds(const int* d_sorted_hashes, int* d_cell_start, int* d_cell_end,
+void launchFindCellBounds(const int* d_sorted_hashes,
+                          int* d_cell_start,
+                          int* d_cell_end,
                           int num_agents) {
     int blockSize = 256;
     int numBlocks = (num_agents + blockSize - 1) / blockSize;
@@ -242,10 +257,16 @@ void launchSortByKey(int* d_keys, int* d_values, int num_agents) {
     thrust::sort_by_key(t_keys, t_keys + num_agents, t_values);
 }
 
-void launchReorderData(const int* sorted_indices, const float* in_inventory,
-                       const float* in_execution_cost, const float* in_cash, const float* in_speed,
-                       float* out_inventory, float* out_execution_cost, float* out_cash,
-                       float* out_speed, int num_agents) {
+void launchReorderData(const int* sorted_indices,
+                       const float* in_inventory,
+                       const float* in_execution_cost,
+                       const float* in_cash,
+                       const float* in_speed,
+                       float* out_inventory,
+                       float* out_execution_cost,
+                       float* out_cash,
+                       float* out_speed,
+                       int num_agents) {
     int blockSize = 256;
     int numBlocks = (num_agents + blockSize - 1) / blockSize;
 
@@ -255,9 +276,12 @@ void launchReorderData(const int* sorted_indices, const float* in_inventory,
     // No sync here - letting caller control synchronization for better performance
 }
 
-void launchComputeLocalDensities(const float* d_inventory, const float* d_execution_cost,
-                                 const int* d_cell_start, const int* d_cell_end,
-                                 float* d_local_density, int num_agents) {
+void launchComputeLocalDensities(const float* d_inventory,
+                                 const float* d_execution_cost,
+                                 const int* d_cell_start,
+                                 const int* d_cell_end,
+                                 float* d_local_density,
+                                 int num_agents) {
     int blockSize = 256;
     int numBlocks = (num_agents + blockSize - 1) / blockSize;
 
@@ -270,46 +294,84 @@ __global__ void computeSpeedTermsKernel(const float* __restrict__ risk_aversion,
                                         const float* __restrict__ local_density,
                                         const float* __restrict__ inventory,
                                         float* __restrict__ speed_term_1,
-                                        float* __restrict__ speed_term_2, int dt) {
+                                        float* __restrict__ speed_term_2,
+                                        int dt) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= d_params.num_agents)
         return;
 
     float personal_decay_rate = sqrtf(risk_aversion[idx] / d_params.temporary_impact);
+    float local_temporary_impact =
+        d_params.temporary_impact * (1 + d_params.congestion_sensitivity * local_density[idx]);
     speed_term_1[idx] = d_params.permanent_impact *
                         (1 - expf(-personal_decay_rate * (d_params.num_steps - dt))) /
-                        (2 * local_density[idx] * personal_decay_rate);
+                        (2 * local_temporary_impact * personal_decay_rate);
     speed_term_2[idx] =
-        (-2 * sqrtf(d_params.temporary_impact * risk_aversion[idx]) * inventory[idx]) /
-        (2 * local_density[idx]);
+        (2 * sqrtf(d_params.temporary_impact * risk_aversion[idx]) * inventory[idx]) /
+        (2 * local_temporary_impact);
 }
 
-__global__ void computeSpeed(const float* __restrict__ speed_term_1,
-                             const float* __restrict__ speed_term_2, const float pressure,
-                             float* speed) {
+__global__ void UpdateSpeedInventoryExecutionCost(const float* __restrict__ speed_term_1,
+                                                  const float* __restrict__ speed_term_2,
+                                                  const float* __restrict__ local_density,
+                                                  const int* __restrict__ agent_indices,
+                                                  const float pressure,
+                                                  float* __restrict__ speed,
+                                                  float* __restrict__ inventory_sorted,
+                                                  float* __restrict__ inventory_original,
+                                                  float* __restrict__ execution_cost) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= d_params.num_agents)
         return;
 
+    float local_temporary_impact =
+        d_params.temporary_impact * (1 + d_params.congestion_sensitivity * local_density[idx]);
     speed[idx] = pressure * speed_term_1[idx] - speed_term_2[idx];
+
+    float new_inv = inventory_sorted[idx] + speed[idx] * d_params.time_delta;
+    inventory_sorted[idx] = new_inv;
+
+    // Scatter back to original location
+    int original_idx = agent_indices[idx];
+    inventory_original[original_idx] = new_inv;
+
+    execution_cost[idx] = local_temporary_impact * speed[idx];
 }
 
-void launchComputeSpeedTerms(const float* d_risk_aversion, const float* d_local_density,
-                             const float* d_inventory, float* d_speed_term_1, float* d_speed_term_2,
-                             int dt, int num_agents) {
+void launchComputeSpeedTerms(const float* d_risk_aversion,
+                             const float* d_local_density,
+                             const float* d_inventory,
+                             float* d_speed_term_1,
+                             float* d_speed_term_2,
+                             int dt,
+                             int num_agents) {
     int blockSize = 256;
     int numBlocks = (num_agents + blockSize - 1) / blockSize;
 
     computeSpeedTermsKernel<<<numBlocks, blockSize>>>(d_risk_aversion, d_local_density, d_inventory,
                                                       d_speed_term_1, d_speed_term_2, dt);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        printf("computeSpeedTermsKernel failed: %s\n", cudaGetErrorString(err));
+    }
 }
 
-void launchComputeSpeed(const float* d_speed_term_1, const float* d_speed_term_2, float pressure,
-                        float* d_speed, int num_agents) {
+void launchUpdateSpeedInventoryExecutionCost(const float* d_speed_term_1,
+                                             const float* d_speed_term_2,
+                                             const float* d_local_density,
+                                             const int* d_agent_indices,
+                                             float pressure,
+                                             float* d_speed,
+                                             float* d_inventory_sorted,
+                                             float* d_inventory_original,
+                                             float* d_execution_cost,
+                                             int num_agents) {
     int blockSize = 256;
     int numBlocks = (num_agents + blockSize - 1) / blockSize;
 
-    computeSpeed<<<numBlocks, blockSize>>>(d_speed_term_1, d_speed_term_2, pressure, d_speed);
+    UpdateSpeedInventoryExecutionCost<<<numBlocks, blockSize>>>(
+        d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices, pressure, d_speed,
+        d_inventory_sorted, d_inventory_original, d_execution_cost);
 }
 
 struct TupleSum {
@@ -320,7 +382,8 @@ struct TupleSum {
     }
 };
 
-void launchComputePressure(const float* d_speed_term_1, const float* d_speed_term_2,
+void launchComputePressure(const float* d_speed_term_1,
+                           const float* d_speed_term_2,
                            float* pressure,  // CPU Pointer
                            int num_agents) {
     thrust::device_ptr<const float> t_1(d_speed_term_1);

@@ -70,7 +70,8 @@ struct SpatialState : public BenchmarkState {
 
 class SimulationFixture : public benchmark::Fixture {
    protected:
-    void setupSimulation(SpatialState& state, const benchmark::State& bench_state,
+    void setupSimulation(SpatialState& state,
+                         const benchmark::State& bench_state,
                          bool use_custom_params = false) {
         state.params.num_agents = bench_state.range(0);
         int dist_type = bench_state.range(1);

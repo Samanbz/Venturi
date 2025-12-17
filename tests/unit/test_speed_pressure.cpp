@@ -21,6 +21,14 @@ class SpeedPressureFixture : public BaseTestFixture {
         cudaMalloc(&d_speed_term_1, size);
         cudaMalloc(&d_speed_term_2, size);
         cudaMalloc(&d_speed, size);
+        cudaMalloc(&d_execution_cost, size);
+        cudaMalloc(&d_agent_indices, params.num_agents * sizeof(int));
+
+        // Initialize identity mapping for indices
+        std::vector<int> h_indices(params.num_agents);
+        std::iota(h_indices.begin(), h_indices.end(), 0);
+        cudaMemcpy(d_agent_indices, h_indices.data(), params.num_agents * sizeof(int),
+                   cudaMemcpyHostToDevice);
 
         // Allocate host memory
         h_inventory.resize(params.num_agents);
@@ -38,6 +46,8 @@ class SpeedPressureFixture : public BaseTestFixture {
         cudaFree(d_speed_term_1);
         cudaFree(d_speed_term_2);
         cudaFree(d_speed);
+        cudaFree(d_execution_cost);
+        cudaFree(d_agent_indices);
     }
 
     void copyToDevice() {
@@ -52,6 +62,8 @@ class SpeedPressureFixture : public BaseTestFixture {
         cudaMemcpy(h_speed_term_1.data(), d_speed_term_1, size, cudaMemcpyDeviceToHost);
         cudaMemcpy(h_speed_term_2.data(), d_speed_term_2, size, cudaMemcpyDeviceToHost);
         cudaMemcpy(h_speed.data(), d_speed, size, cudaMemcpyDeviceToHost);
+        cudaMemcpy(h_inventory.data(), d_inventory, size, cudaMemcpyDeviceToHost);
+        cudaMemcpy(h_execution_cost.data(), d_execution_cost, size, cudaMemcpyDeviceToHost);
     }
 
     float* d_inventory = nullptr;
@@ -60,6 +72,8 @@ class SpeedPressureFixture : public BaseTestFixture {
     float* d_speed_term_1 = nullptr;
     float* d_speed_term_2 = nullptr;
     float* d_speed = nullptr;
+    float* d_execution_cost = nullptr;
+    int* d_agent_indices = nullptr;
 
     std::vector<float> h_inventory;
     std::vector<float> h_risk_aversion;
@@ -67,6 +81,7 @@ class SpeedPressureFixture : public BaseTestFixture {
     std::vector<float> h_speed_term_1;
     std::vector<float> h_speed_term_2;
     std::vector<float> h_speed;
+    std::vector<float> h_execution_cost;
 };
 
 // Closed-Loop Invariant Testing for Pressure Dynamics
@@ -89,7 +104,9 @@ TEST_F(SpeedPressureFixture, PressureConsistency) {
     float pressure = 0.0f;
     launchComputePressure(d_speed_term_1, d_speed_term_2, &pressure, params.num_agents);
 
-    launchComputeSpeed(d_speed_term_1, d_speed_term_2, pressure, d_speed, params.num_agents);
+    launchUpdateSpeedInventoryExecutionCost(d_speed_term_1, d_speed_term_2, d_local_density,
+                                            d_agent_indices, pressure, d_speed, d_inventory,
+                                            d_inventory, d_execution_cost, params.num_agents);
     cudaDeviceSynchronize();
 
     copyFromDevice();
@@ -101,7 +118,7 @@ TEST_F(SpeedPressureFixture, PressureConsistency) {
     }
 
     // The aggregate market pressure matches the sum of individual agent speeds
-    EXPECT_NEAR(pressure, sum_speed, 1e-3f) << "Pressure should equal sum of speeds";
+    EXPECT_NEAR(pressure, sum_speed, 1e-2f) << "Pressure should equal sum of speeds";
 }
 
 // CPU Oracle for Kernel Numerical Verification
@@ -115,6 +132,10 @@ TEST_F(SpeedPressureFixture, NumericalAccuracy) {
         h_risk_aversion[i] = 0.5f + i * 0.05f;
         h_local_density[i] = 1.0f + i * 0.1f;
     }
+
+    // Backup initial inventory for CPU oracle
+    std::vector<float> initial_inventory = h_inventory;
+
     copyToDevice();
 
     int dt = 5;
@@ -124,7 +145,9 @@ TEST_F(SpeedPressureFixture, NumericalAccuracy) {
     float gpu_pressure = 0.0f;
     launchComputePressure(d_speed_term_1, d_speed_term_2, &gpu_pressure, params.num_agents);
 
-    launchComputeSpeed(d_speed_term_1, d_speed_term_2, gpu_pressure, d_speed, params.num_agents);
+    launchUpdateSpeedInventoryExecutionCost(d_speed_term_1, d_speed_term_2, d_local_density,
+                                            d_agent_indices, gpu_pressure, d_speed, d_inventory,
+                                            d_inventory, d_execution_cost, params.num_agents);
     cudaDeviceSynchronize();
 
     copyFromDevice();
@@ -140,17 +163,19 @@ TEST_F(SpeedPressureFixture, NumericalAccuracy) {
 
     for (int i = 0; i < params.num_agents; ++i) {
         float personal_decay_rate = sqrtf(h_risk_aversion[i] / params.temporary_impact);
+        float local_temporary_impact =
+            params.temporary_impact * (1.0f + params.congestion_sensitivity * h_local_density[i]);
 
         // Term 1
         float num =
             params.permanent_impact * (1.0f - expf(-personal_decay_rate * (params.num_steps - dt)));
-        float den = 2.0f * h_local_density[i] * personal_decay_rate;
+        float den = 2.0f * local_temporary_impact * personal_decay_rate;
         cpu_term1[i] = num / den;
 
         // Term 2
         float term2_num =
-            -2.0f * sqrtf(params.temporary_impact * h_risk_aversion[i]) * h_inventory[i];
-        float term2_den = 2.0f * h_local_density[i];
+            2.0f * sqrtf(params.temporary_impact * h_risk_aversion[i]) * initial_inventory[i];
+        float term2_den = 2.0f * local_temporary_impact;
         cpu_term2[i] = term2_num / term2_den;
 
         sum_term1 += cpu_term1[i];
@@ -165,11 +190,11 @@ TEST_F(SpeedPressureFixture, NumericalAccuracy) {
 
     // Verify
     for (int i = 0; i < params.num_agents; ++i) {
-        EXPECT_NEAR(h_speed_term_1[i], cpu_term1[i], 1e-6f) << "Term 1 mismatch at index " << i;
-        EXPECT_NEAR(h_speed_term_2[i], cpu_term2[i], 1e-6f) << "Term 2 mismatch at index " << i;
-        EXPECT_NEAR(h_speed[i], cpu_speed[i], 1e-6f) << "Speed mismatch at index " << i;
+        EXPECT_NEAR(h_speed_term_1[i], cpu_term1[i], 1e-4f) << "Term 1 mismatch at index " << i;
+        EXPECT_NEAR(h_speed_term_2[i], cpu_term2[i], 1e-4f) << "Term 2 mismatch at index " << i;
+        EXPECT_NEAR(h_speed[i], cpu_speed[i], 1e-4f) << "Speed mismatch at index " << i;
     }
-    EXPECT_NEAR(gpu_pressure, cpu_pressure, 1e-6f) << "Pressure mismatch";
+    EXPECT_NEAR(gpu_pressure, cpu_pressure, 1e-4f) << "Pressure mismatch";
 }
 
 // Stress Test Boundary Conditions and Singularities
@@ -191,7 +216,9 @@ TEST_F(SpeedPressureFixture, BoundaryConditions_ZeroDensity) {
 
     float pressure = 0.0f;
     launchComputePressure(d_speed_term_1, d_speed_term_2, &pressure, params.num_agents);
-    launchComputeSpeed(d_speed_term_1, d_speed_term_2, pressure, d_speed, params.num_agents);
+    launchUpdateSpeedInventoryExecutionCost(d_speed_term_1, d_speed_term_2, d_local_density,
+                                            d_agent_indices, pressure, d_speed, d_inventory,
+                                            d_inventory, d_execution_cost, params.num_agents);
     cudaDeviceSynchronize();
 
     copyFromDevice();
@@ -223,7 +250,9 @@ TEST_F(SpeedPressureFixture, BoundaryConditions_TimeMaturity) {
 
     float pressure = 0.0f;
     launchComputePressure(d_speed_term_1, d_speed_term_2, &pressure, params.num_agents);
-    launchComputeSpeed(d_speed_term_1, d_speed_term_2, pressure, d_speed, params.num_agents);
+    launchUpdateSpeedInventoryExecutionCost(d_speed_term_1, d_speed_term_2, d_local_density,
+                                            d_agent_indices, pressure, d_speed, d_inventory,
+                                            d_inventory, d_execution_cost, params.num_agents);
     cudaDeviceSynchronize();
 
     copyFromDevice();

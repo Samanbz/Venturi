@@ -68,19 +68,13 @@ BENCHMARK_DEFINE_F(InitFixture, InitializeRiskAversions)(benchmark::State& state
 }
 
 BENCHMARK_REGISTER_F(InitFixture, InitializeInventories)
-    ->Args({1000})
-    ->Args({10000})
-    ->Args({100000})
-    ->Args({1000000})
-    ->Args({10000000})
+    ->RangeMultiplier(4)
+    ->Range(1024, 1048576)
     ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(InitFixture, InitializeRiskAversions)
-    ->Args({1000})
-    ->Args({10000})
-    ->Args({100000})
-    ->Args({1000000})
-    ->Args({10000000})
+    ->RangeMultiplier(4)
+    ->Range(1024, 1048576)
     ->Unit(benchmark::kMillisecond);
 
 /*
@@ -153,9 +147,8 @@ BENCHMARK_DEFINE_F(InitFixture, CombinedInitialization)(benchmark::State& state)
 }
 
 BENCHMARK_REGISTER_F(InitFixture, CombinedInitialization)
-    ->Args({10000})
-    ->Args({100000})
-    ->Args({1000000})
+    ->RangeMultiplier(4)
+    ->Range(1024, 1048576)
     ->Unit(benchmark::kMillisecond);
 
 /*
@@ -176,10 +169,8 @@ BENCHMARK_DEFINE_F(InitFixture, SetupRNG)(benchmark::State& state) {
 }
 
 BENCHMARK_REGISTER_F(InitFixture, SetupRNG)
-    ->Args({1000})
-    ->Args({10000})
-    ->Args({100000})
-    ->Args({1000000})
+    ->RangeMultiplier(4)
+    ->Range(1024, 1048576)
     ->Unit(benchmark::kMillisecond);
 
 /*

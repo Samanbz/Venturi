@@ -3,6 +3,7 @@
 #include <cuda_runtime.h>
 
 #include <ctime>
+#include <random>
 
 Simulation::Simulation(const MarketParams& params) : params_(params) {
     // Copy MarketParams to device constant memory
@@ -21,10 +22,19 @@ Simulation::Simulation(const MarketParams& params) : params_(params) {
     cudaMalloc(&state_.d_local_density, size);
     cudaMalloc(&state_.d_risk_aversion, size);
     cudaMalloc(&state_.d_execution_cost, size);
+
+    // Allocate sorted arrays and intermediate buffers
+    cudaMalloc(&state_.d_inventory_sorted, size);
+    cudaMalloc(&state_.d_cash_sorted, size);
+    cudaMalloc(&state_.d_speed_sorted, size);
+    cudaMalloc(&state_.d_execution_cost_sorted, size);
+    cudaMalloc(&state_.d_speed_term_1, size);
+    cudaMalloc(&state_.d_speed_term_2, size);
+
     cudaMalloc(&state_.d_rngStates, params.num_agents * sizeof(curandState));
 
-    cudaMalloc(&state_.d_cell_start, params.num_agents * sizeof(int));
-    cudaMalloc(&state_.d_cell_end, params.num_agents * sizeof(int));
+    cudaMalloc(&state_.d_cell_start, params.hash_table_size * sizeof(int));
+    cudaMalloc(&state_.d_cell_end, params.hash_table_size * sizeof(int));
     cudaMalloc(&state_.d_agent_hash, params.num_agents * sizeof(int));
     cudaMalloc(&state_.d_agent_index, params.num_agents * sizeof(int));
 
@@ -41,6 +51,9 @@ Simulation::Simulation(const MarketParams& params) : params_(params) {
     cudaMemset(state_.d_speed, 0, size);
     cudaMemset(state_.d_local_density, 0, size);
     cudaMemset(state_.d_execution_cost, 0, size);
+
+    std::mt19937 rng(std::random_device{}());
+    std::normal_distribution<float> normal_dist(0.0f, 1.0f);
 }
 
 void Simulation::computeLocalDensities() {
@@ -79,11 +92,19 @@ void Simulation::computePressure() {
                           params_.num_agents);
 }
 
-void Simulation::computeSpeed() {
+void Simulation::updateSpeedInventoryExecutionCost() {
     // Compute the trading speed for each agent based on their risk aversion, local density, and
     // pressure
-    launchComputeSpeed(state_.d_speed_term_1, state_.d_speed_term_2, state_.pressure,
-                       state_.d_speed, params_.num_agents);
+    launchUpdateSpeedInventoryExecutionCost(
+        state_.d_speed_term_1, state_.d_speed_term_2, state_.d_local_density, state_.d_agent_index,
+        state_.pressure, state_.d_speed_sorted, state_.d_inventory_sorted, state_.d_inventory,
+        state_.d_execution_cost_sorted, params_.num_agents);
+}
+
+void Simulation::updatePrice() {
+    state_.price +=
+        params_.permanent_impact * state_.pressure * params_.time_delta +
+        params_.price_randomness_stddev * this->normal_dist(rng) * sqrt(params_.time_delta);
 }
 
 void Simulation::step() {
@@ -91,10 +112,8 @@ void Simulation::step() {
 
     computeLocalDensities();
     computePressure();
-    computeSpeed();
-    // computePrice();
-    // computeQuantities();
-    // computeExecutionCosts();
+    updateSpeedInventoryExecutionCost();
+    updatePrice();
 }
 
 Simulation::~Simulation() {
@@ -105,4 +124,16 @@ Simulation::~Simulation() {
     cudaFree(state_.d_local_density);
     cudaFree(state_.d_risk_aversion);
     cudaFree(state_.d_rngStates);
+
+    cudaFree(state_.d_inventory_sorted);
+    cudaFree(state_.d_cash_sorted);
+    cudaFree(state_.d_speed_sorted);
+    cudaFree(state_.d_execution_cost_sorted);
+    cudaFree(state_.d_speed_term_1);
+    cudaFree(state_.d_speed_term_2);
+
+    cudaFree(state_.d_cell_start);
+    cudaFree(state_.d_cell_end);
+    cudaFree(state_.d_agent_hash);
+    cudaFree(state_.d_agent_index);
 }

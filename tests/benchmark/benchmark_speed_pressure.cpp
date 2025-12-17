@@ -1,6 +1,9 @@
 #include <benchmark/benchmark.h>
 #include <cuda_runtime.h>
 
+#include <numeric>
+#include <vector>
+
 #include "../../src/simulation.h"
 #include "../../src/types.h"
 #include "../common/benchmark_common.h"
@@ -12,6 +15,8 @@ struct SpeedPressureState : public BenchmarkState {
     float* d_speed_term_1 = nullptr;
     float* d_speed_term_2 = nullptr;
     float* d_speed = nullptr;
+    float* d_execution_cost = nullptr;
+    int* d_agent_indices = nullptr;
     curandState* d_rngStates = nullptr;
     MarketParams params;
 
@@ -24,7 +29,14 @@ struct SpeedPressureState : public BenchmarkState {
         cudaMalloc(&d_speed_term_1, n * sizeof(float));
         cudaMalloc(&d_speed_term_2, n * sizeof(float));
         cudaMalloc(&d_speed, n * sizeof(float));
+        cudaMalloc(&d_execution_cost, n * sizeof(float));
+        cudaMalloc(&d_agent_indices, n * sizeof(int));
         cudaMalloc(&d_rngStates, n * sizeof(curandState));
+
+        // Initialize identity mapping for indices
+        std::vector<int> h_indices(n);
+        std::iota(h_indices.begin(), h_indices.end(), 0);
+        cudaMemcpy(d_agent_indices, h_indices.data(), n * sizeof(int), cudaMemcpyHostToDevice);
 
         setupRNG(d_rngStates, n, 12345ULL);
     }
@@ -36,6 +48,8 @@ struct SpeedPressureState : public BenchmarkState {
         cudaFree(d_speed_term_1);
         cudaFree(d_speed_term_2);
         cudaFree(d_speed);
+        cudaFree(d_execution_cost);
+        cudaFree(d_agent_indices);
         cudaFree(d_rngStates);
     }
 } g_speed_pressure_state;
@@ -108,9 +122,12 @@ BENCHMARK_DEFINE_F(SpeedPressureFixture, ComputeSpeed)(benchmark::State& state) 
     cudaDeviceSynchronize();
 
     for (auto _ : state) {
-        launchComputeSpeed(
-            g_speed_pressure_state.d_speed_term_1, g_speed_pressure_state.d_speed_term_2, pressure,
-            g_speed_pressure_state.d_speed, g_speed_pressure_state.params.num_agents);
+        launchUpdateSpeedInventoryExecutionCost(
+            g_speed_pressure_state.d_speed_term_1, g_speed_pressure_state.d_speed_term_2,
+            g_speed_pressure_state.d_local_density, g_speed_pressure_state.d_agent_indices,
+            pressure, g_speed_pressure_state.d_speed, g_speed_pressure_state.d_inventory,
+            g_speed_pressure_state.d_inventory, g_speed_pressure_state.d_execution_cost,
+            g_speed_pressure_state.params.num_agents);
         cudaDeviceSynchronize();
     }
 }
@@ -128,9 +145,12 @@ BENCHMARK_DEFINE_F(SpeedPressureFixture, FullSpeedPressureStep)(benchmark::State
                               g_speed_pressure_state.d_speed_term_2, &pressure,
                               g_speed_pressure_state.params.num_agents);
 
-        launchComputeSpeed(
-            g_speed_pressure_state.d_speed_term_1, g_speed_pressure_state.d_speed_term_2, pressure,
-            g_speed_pressure_state.d_speed, g_speed_pressure_state.params.num_agents);
+        launchUpdateSpeedInventoryExecutionCost(
+            g_speed_pressure_state.d_speed_term_1, g_speed_pressure_state.d_speed_term_2,
+            g_speed_pressure_state.d_local_density, g_speed_pressure_state.d_agent_indices,
+            pressure, g_speed_pressure_state.d_speed, g_speed_pressure_state.d_inventory,
+            g_speed_pressure_state.d_inventory, g_speed_pressure_state.d_execution_cost,
+            g_speed_pressure_state.params.num_agents);
         cudaDeviceSynchronize();
     }
 }
