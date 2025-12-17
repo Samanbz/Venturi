@@ -167,11 +167,6 @@ BENCHMARK_DEFINE_F(InitFixture, SetupRNG)(benchmark::State& state) {
     unsigned long long seed = 99999ULL;
 
     for (auto _ : state) {
-        // Reinitialize RNG states - this is what was killing performance before!
-        state.PauseTiming();
-        // We don't count the reinit in the benchmark, just showing the cost
-        state.ResumeTiming();
-
         setupRNG(g_init_state.d_rngStates, g_init_state.params.num_agents, seed);
         cudaDeviceSynchronize();
     }

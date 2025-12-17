@@ -29,6 +29,16 @@ extern void launchComputeLocalDensities(const float* d_inventory, const float* d
                                         const int* d_cell_start_idx, const int* d_cell_end_idxs,
                                         float* d_local_density, int num_agents);
 
+extern void launchComputePressure(const float* d_speed_term_1, const float* d_speed_term_2,
+                                  float* pressure, int num_agents);
+
+extern void launchComputeSpeed(const float* d_speed_term_1, const float* d_speed_term_2,
+                               float pressure, float* d_speed, int num_agents);
+
+extern void launchComputeSpeedTerms(const float* d_risk_aversion, const float* d_local_density,
+                                    const float* d_inventory, float* d_speed_term_1,
+                                    float* d_speed_term_2, int dt, int num_agents);
+
 class Simulation {
    public:
     Simulation(const MarketParams& params);
@@ -38,6 +48,8 @@ class Simulation {
 
    private:
     void computeLocalDensities();
+    void computePressure();
+    void computeSpeed();
     MarketParams params_;
     MarketState state_;
 };

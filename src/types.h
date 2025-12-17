@@ -3,15 +3,18 @@
 #include <curand_kernel.h>
 
 struct MarketState {
-    int dt;            // t, current time step
-    float d_price;     // S_t, current asset price
-    float d_pressure;  // mu_t, current market pressure
+    int dt;          // t, current time step
+    float price;     // S_t, current asset price
+    float pressure;  // mu_t, current market pressure
 
     float* d_inventory;       // Q_t^a, agent inventories
     float* d_cash;            // X_t^a, agent cash balances
     float* d_execution_cost;  // \delta_t^a, agent execution costs
-    float* d_speed;           // nu_t^a, agent trading speeds
-    float* d_local_density;   // rho_t^a, agent local densities
+
+    float* d_speed_term_1;
+    float* d_speed_term_2;
+    float* d_speed;          // nu_t^a, agent trading speeds
+    float* d_local_density;  // rho_t^a, agent local densities
 
     float* d_inventory_sorted;       // Q_t^a, agent inventories
     float* d_cash_sorted;            // X_t^a, agent cash balances

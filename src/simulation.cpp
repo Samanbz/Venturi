@@ -10,8 +10,8 @@ Simulation::Simulation(const MarketParams& params) : params_(params) {
 
     // Initialize MarketState scalars (these stay on host)
     state_.dt = 0;
-    state_.d_price = params.price_init;
-    state_.d_pressure = 0.0f;
+    state_.price = params.price_init;
+    state_.pressure = 0.0f;
 
     // Allocate device memory for agent-specific arrays
     size_t size = params.num_agents * sizeof(float);
@@ -69,12 +69,29 @@ void Simulation::computeLocalDensities() {
                                 params_.num_agents);
 }
 
+void Simulation::computePressure() {
+    launchComputeSpeedTerms(state_.d_risk_aversion, state_.d_local_density,
+                            state_.d_inventory_sorted, state_.d_speed_term_1, state_.d_speed_term_2,
+                            state_.dt, params_.num_agents);
+
+    // Compute the pressure based on the speed terms
+    launchComputePressure(state_.d_speed_term_1, state_.d_speed_term_2, &state_.pressure,
+                          params_.num_agents);
+}
+
+void Simulation::computeSpeed() {
+    // Compute the trading speed for each agent based on their risk aversion, local density, and
+    // pressure
+    launchComputeSpeed(state_.d_speed_term_1, state_.d_speed_term_2, state_.pressure,
+                       state_.d_speed, params_.num_agents);
+}
+
 void Simulation::step() {
     state_.dt++;
 
     computeLocalDensities();
-    // computePressure();
-    // computeVelocities();
+    computePressure();
+    computeSpeed();
     // computePrice();
     // computeQuantities();
     // computeExecutionCosts();

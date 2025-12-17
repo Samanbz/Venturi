@@ -1,6 +1,8 @@
 #include <curand_kernel.h>
 #include <thrust/device_ptr.h>
+#include <thrust/reduce.h>
 #include <thrust/sort.h>
+#include <thrust/tuple.h>
 
 #include <ctime>
 
@@ -262,4 +264,76 @@ void launchComputeLocalDensities(const float* d_inventory, const float* d_execut
     computeLocalDensitiesKernel<<<numBlocks, blockSize>>>(
         d_inventory, d_execution_cost, d_cell_start, d_cell_end, d_local_density);
     // No sync here - letting caller control synchronization for better performance
+}
+
+__global__ void computeSpeedTermsKernel(const float* __restrict__ risk_aversion,
+                                        const float* __restrict__ local_density,
+                                        const float* __restrict__ inventory,
+                                        float* __restrict__ speed_term_1,
+                                        float* __restrict__ speed_term_2, int dt) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= d_params.num_agents)
+        return;
+
+    float personal_decay_rate = sqrtf(risk_aversion[idx] / d_params.temporary_impact);
+    speed_term_1[idx] = d_params.permanent_impact *
+                        (1 - expf(-personal_decay_rate * (d_params.num_steps - dt))) /
+                        (2 * local_density[idx] * personal_decay_rate);
+    speed_term_2[idx] =
+        (-2 * sqrtf(d_params.temporary_impact * risk_aversion[idx]) * inventory[idx]) /
+        (2 * local_density[idx]);
+}
+
+__global__ void computeSpeed(const float* __restrict__ speed_term_1,
+                             const float* __restrict__ speed_term_2, const float pressure,
+                             float* speed) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= d_params.num_agents)
+        return;
+
+    speed[idx] = pressure * speed_term_1[idx] - speed_term_2[idx];
+}
+
+void launchComputeSpeedTerms(const float* d_risk_aversion, const float* d_local_density,
+                             const float* d_inventory, float* d_speed_term_1, float* d_speed_term_2,
+                             int dt, int num_agents) {
+    int blockSize = 256;
+    int numBlocks = (num_agents + blockSize - 1) / blockSize;
+
+    computeSpeedTermsKernel<<<numBlocks, blockSize>>>(d_risk_aversion, d_local_density, d_inventory,
+                                                      d_speed_term_1, d_speed_term_2, dt);
+}
+
+void launchComputeSpeed(const float* d_speed_term_1, const float* d_speed_term_2, float pressure,
+                        float* d_speed, int num_agents) {
+    int blockSize = 256;
+    int numBlocks = (num_agents + blockSize - 1) / blockSize;
+
+    computeSpeed<<<numBlocks, blockSize>>>(d_speed_term_1, d_speed_term_2, pressure, d_speed);
+}
+
+struct TupleSum {
+    __host__ __device__ thrust::tuple<float, float> operator()(
+        const thrust::tuple<float, float>& a, const thrust::tuple<float, float>& b) const {
+        return thrust::make_tuple(thrust::get<0>(a) + thrust::get<0>(b),
+                                  thrust::get<1>(a) + thrust::get<1>(b));
+    }
+};
+
+void launchComputePressure(const float* d_speed_term_1, const float* d_speed_term_2,
+                           float* pressure,  // CPU Pointer
+                           int num_agents) {
+    thrust::device_ptr<const float> t_1(d_speed_term_1);
+    thrust::device_ptr<const float> t_2(d_speed_term_2);
+
+    auto start = thrust::make_zip_iterator(thrust::make_tuple(t_1, t_2));
+    auto end = thrust::make_zip_iterator(thrust::make_tuple(t_1 + num_agents, t_2 + num_agents));
+
+    thrust::tuple<float, float> init(0.0f, 0.0f);
+    thrust::tuple<float, float> result = thrust::reduce(start, end, init, TupleSum());
+
+    float s1 = thrust::get<0>(result);
+    float s2 = thrust::get<1>(result);
+
+    *pressure = -s2 / (1.0f - s1);
 }
