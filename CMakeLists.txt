@@ -10,6 +10,9 @@ set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 find_package(CUDAToolkit REQUIRED)
 find_package(GTest REQUIRED)
 find_package(benchmark QUIET)
+find_package(Vulkan REQUIRED)
+find_package(glfw3 3.3 REQUIRED)
+
 
 # Main library (shared between main executable and tests)
 add_library(venturi_lib
@@ -17,12 +20,12 @@ add_library(venturi_lib
     src/simulation.cu
 )
 target_include_directories(venturi_lib PUBLIC ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(venturi_lib CUDA::cudart CUDA::curand)
+target_link_libraries(venturi_lib CUDA::cudart CUDA::curand Vulkan::Vulkan glfw)
 
 # Main executable
 add_executable(venturi src/main.cpp)
 target_link_libraries(venturi venturi_lib)
-
+target_compile_options(venturi PRIVATE $<$<CONFIG:Release>:-O2>)
 # Testing
 enable_testing()
 
