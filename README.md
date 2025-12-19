@@ -1,12 +1,12 @@
 # Venturi
 
-A CMake-based C++20 project with CUDA 11.5 support.
+A CMake-based C++17 project with CUDA 11.5 support.
 
 ## Prerequisites
 
 - CMake 3.18 or higher
 - CUDA 11.5
-- C++20 compatible compiler
+- C++17 compatible compiler
 
 ## Building
 
