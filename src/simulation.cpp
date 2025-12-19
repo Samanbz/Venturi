@@ -11,8 +11,14 @@
 #include <stdexcept>
 #include <vector>
 
-Simulation::Simulation(const MarketParams& params)
+Simulation::Simulation(const MarketParams& params, float* vk_X, float* vk_Y)
     : params_(params), rng(std::random_device{}()), normal_dist(0.0f, 1.0f) {
+    if (vk_X == nullptr ^ vk_Y == nullptr) {
+        throw std::invalid_argument("Both vk_X and vk_Y must be provided or both must be nullptr");
+    }
+
+    externalMemoryProvided = (vk_X != nullptr && vk_Y != nullptr);
+
     // Copy MarketParams to device constant memory
     copyParamsToDevice(params_);
 
@@ -23,12 +29,19 @@ Simulation::Simulation(const MarketParams& params)
 
     // Allocate device memory for agent-specific arrays
     size_t size = params.num_agents * sizeof(float);
-    cudaMalloc(&state_.d_inventory, size);
+
+    if (!externalMemoryProvided) {
+        cudaMalloc(&state_.d_inventory, size);
+        cudaMalloc(&state_.d_execution_cost, size);
+    } else {
+        state_.d_inventory = vk_X;
+        state_.d_execution_cost = vk_Y;
+    }
+
     cudaMalloc(&state_.d_cash, size);
     cudaMalloc(&state_.d_speed, size);
     cudaMalloc(&state_.d_local_density, size);
     cudaMalloc(&state_.d_risk_aversion, size);
-    cudaMalloc(&state_.d_execution_cost, size);
 
     // Allocate sorted arrays and intermediate buffers
     cudaMalloc(&state_.d_inventory_sorted, size);
@@ -128,7 +141,15 @@ void Simulation::run() {
 
 Simulation::~Simulation() {
     // Free device memory
-    cudaFree(state_.d_inventory);
+    if (externalMemoryProvided) {
+        // If external memory was provided, do not free those pointers
+        state_.d_inventory = nullptr;
+        state_.d_execution_cost = nullptr;
+    } else {
+        cudaFree(state_.d_inventory);
+        cudaFree(state_.d_execution_cost);
+    }
+
     cudaFree(state_.d_cash);
     cudaFree(state_.d_speed);
     cudaFree(state_.d_local_density);

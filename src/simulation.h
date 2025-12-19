@@ -72,7 +72,7 @@ extern void launchComputeSpeedTerms(const float* d_risk_aversion,
 
 class Simulation {
    public:
-    Simulation(const MarketParams& params);
+    Simulation(const MarketParams& params, float* vk_X = nullptr, float* vk_Y = nullptr);
     ~Simulation();
 
     void step();
@@ -86,6 +86,8 @@ class Simulation {
     void computePressure();
     void updateSpeedInventoryExecutionCost();
     void updatePrice();
+
+    bool externalMemoryProvided;
 
     // Simulation parameters and state
     MarketParams params_;

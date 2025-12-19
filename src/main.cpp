@@ -1,12 +1,11 @@
+
+#include <iostream>
+
 #include "canvas.h"
 
 int main() {
-    Canvas sim{};
+    Canvas canvas{10000};
 
-    sim.initWindow();
-    sim.initVulkan();
-    sim.mainLoop();
-    sim.cleanup();
-
+    canvas.mainLoop();
     return 0;
 }

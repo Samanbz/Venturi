@@ -21,6 +21,21 @@ void Canvas::initWindow() {
     window_ = glfwCreateWindow(WIDTH, HEIGHT, "Venturi Simulation", nullptr, nullptr);
 }
 
+std::pair<float*, float*> Canvas::getCudaDevicePointers() {
+    VkDeviceSize bufferSize = numVertices * sizeof(float);
+
+    // Get FDs
+    int fdX = getMemoryFd(xBufferMemory);
+    int fdY = getMemoryFd(yBufferMemory);
+
+    // Map to CUDA Device Pointers
+    // Note: CUDA takes ownership of the FDs once imported.
+    float* ptrX = mapFDToCudaPointer(fdX, bufferSize);
+    float* ptrY = mapFDToCudaPointer(fdY, bufferSize);
+
+    return {ptrX, ptrY};
+}
+
 void Canvas::createVulkanInstance() {
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -175,7 +190,9 @@ void Canvas::createLogicalDevice() {
 
     VkPhysicalDeviceFeatures deviceFeatures{};
     VkDeviceCreateInfo createInfo{};
-    const std::vector<const char*> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    const std::vector<const char*> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+                                                       VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
+                                                       VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
@@ -207,37 +224,64 @@ uint32_t Canvas::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags prope
     throw std::runtime_error("failed to find suitable memory type!");
 }
 
-void Canvas::createVertexBuffer() {
-    VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-
-    // Create the buffer handle
+void Canvas::createVertexBuffers() {
+    // Create the buffer handle for xBuffer
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = bufferSize;
+    bufferInfo.size = numVertices * sizeof(float);
     bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    vkCreateBuffer(device_, &bufferInfo, nullptr, &vertexBuffer);
+    vkCreateBuffer(device_, &bufferInfo, nullptr, &xBuffer);
 
-    // Get memory requirements
+    // Get memory requirements for xBuffer
     VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(device_, vertexBuffer, &memRequirements);
+    vkGetBufferMemoryRequirements(device_, xBuffer, &memRequirements);
 
-    // Allocate the memory
+    // Allocate memory for xBuffer
+    VkExportMemoryAllocateInfo exportAllocInfo{};
+    exportAllocInfo.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
+    exportAllocInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+
     VkMemoryAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.pNext = &exportAllocInfo;
     allocInfo.allocationSize = memRequirements.size;
     allocInfo.memoryTypeIndex =
-        findMemoryType(memRequirements.memoryTypeBits,
-                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    vkAllocateMemory(device_, &allocInfo, nullptr, &xBufferMemory);
+    vkBindBufferMemory(device_, xBuffer, xBufferMemory, 0);
 
-    vkAllocateMemory(device_, &allocInfo, nullptr, &vertexBufferMemory);
-    vkBindBufferMemory(device_, vertexBuffer, vertexBufferMemory, 0);
+    // Create the buffer handle for yBuffer
+    vkCreateBuffer(device_, &bufferInfo, nullptr, &yBuffer);
 
-    // Copy data
-    void* data;
-    vkMapMemory(device_, vertexBufferMemory, 0, bufferSize, 0, &data);
-    memcpy(data, vertices.data(), (size_t) bufferSize);
-    vkUnmapMemory(device_, vertexBufferMemory);
+    // Get memory requirements for yBuffer
+    vkGetBufferMemoryRequirements(device_, yBuffer, &memRequirements);
+
+    // Allocate memory for yBuffer
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex =
+        findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    vkAllocateMemory(device_, &allocInfo, nullptr, &yBufferMemory);
+    vkBindBufferMemory(device_, yBuffer, yBufferMemory, 0);
+}
+
+int Canvas::getMemoryFd(VkDeviceMemory memory) {
+    // Load the extension function pointer
+    auto func = (PFN_vkGetMemoryFdKHR) vkGetDeviceProcAddr(device_, "vkGetMemoryFdKHR");
+    if (!func) {
+        throw std::runtime_error("Failed to locate vkGetMemoryFdKHR function!");
+    }
+
+    VkMemoryGetFdInfoKHR fdInfo{};
+    fdInfo.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR;
+    fdInfo.memory = memory;
+    fdInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+
+    int fd = -1;
+    if (func(device_, &fdInfo, &fd) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to retrieve file descriptor from Vulkan memory");
+    }
+    return fd;
 }
 
 void Canvas::createSurface() {
@@ -441,13 +485,38 @@ void Canvas::createGraphicsPipeline() {
 
     VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
-    auto bindingDescription = Vertex::getBindingDescription();
-    auto attributeDescriptions = Vertex::getAttributeDescriptions();
+    // Define Binding Descriptions
+    std::vector<VkVertexInputBindingDescription> bindings(2);
+
+    // Binding 0: The X Axis
+    bindings[0].binding = 0;
+    bindings[0].stride = sizeof(float);
+    bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    // Binding 1: The Y Axis
+    bindings[1].binding = 1;
+    bindings[1].stride = sizeof(float);
+    bindings[1].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    // Define Attribute Descriptions
+    std::vector<VkVertexInputAttributeDescription> attributeDescriptions(2);
+
+    // Attribute 0: Maps to 'in float inX' (Location = 0)
+    attributeDescriptions[0].binding = 0;
+    attributeDescriptions[0].location = 0;
+    attributeDescriptions[0].format = VK_FORMAT_R32_SFLOAT;
+    attributeDescriptions[0].offset = 0;
+
+    // Attribute 1: Maps to 'in float inY' (Location = 1)
+    attributeDescriptions[1].binding = 1;
+    attributeDescriptions[1].location = 1;
+    attributeDescriptions[1].format = VK_FORMAT_R32_SFLOAT;
+    attributeDescriptions[1].offset = 0;
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindings.size());
+    vertexInputInfo.pVertexBindingDescriptions = bindings.data();
     vertexInputInfo.vertexAttributeDescriptionCount =
         static_cast<uint32_t>(attributeDescriptions.size());
     vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
@@ -582,6 +651,8 @@ void Canvas::createCommandBuffer() {
 }
 
 void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+    size_t bufferSize = numVertices * sizeof(Vertex);
+
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
@@ -618,11 +689,11 @@ void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIn
     scissor.extent = swapChainExtent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    VkBuffer vertexBuffers[] = {vertexBuffer};
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+    VkBuffer vertexBuffers[] = {xBuffer, yBuffer};
+    VkDeviceSize offsets[] = {0, 0};
+    vkCmdBindVertexBuffers(commandBuffer, 0, 2, vertexBuffers, offsets);
 
-    vkCmdDraw(commandBuffer, static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+    vkCmdDraw(commandBuffer, static_cast<uint32_t>(bufferSize), 1, 0, 0);
 
     vkCmdEndRenderPass(commandBuffer);
 
@@ -698,7 +769,7 @@ void Canvas::initVulkan() {
     createSurface();
     pickPhysicalDevice();
     createLogicalDevice();
-    createVertexBuffer();
+    createVertexBuffers();
     createSwapChain();
     createImageViews();
     createRenderPass();
@@ -718,8 +789,11 @@ void Canvas::mainLoop() {
 }
 
 void Canvas::cleanup() {
-    vkDestroyBuffer(device_, vertexBuffer, nullptr);
-    vkFreeMemory(device_, vertexBufferMemory, nullptr);
+    vkDestroyBuffer(device_, xBuffer, nullptr);
+    vkDestroyBuffer(device_, yBuffer, nullptr);
+    vkFreeMemory(device_, xBufferMemory, nullptr);
+    vkFreeMemory(device_, yBufferMemory, nullptr);
+
     vkDestroySemaphore(device_, renderFinishedSemaphore, nullptr);
     vkDestroySemaphore(device_, imageAvailableSemaphore, nullptr);
     vkDestroyFence(device_, inFlightFence, nullptr);

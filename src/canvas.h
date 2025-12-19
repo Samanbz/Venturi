@@ -46,10 +46,23 @@ struct Vertex {
 
 class Canvas {
    public:
-    Canvas() = default;
+    Canvas(size_t numVertices) : numVertices(numVertices) {
+        initWindow();
+        initVulkan();
+        // mainLoop();
+        // cleanup();
+    }
+
+    ~Canvas() { cleanup(); }
+
+    /**
+     * @brief Get CUDA device pointers mapped to the Vulkan vertex buffers
+     *
+     * @return std::pair<float*, float*> The CUDA device pointers for the X and Y vertex buffers
+     */
+    std::pair<float*, float*> getCudaDevicePointers();
 
     //    private:
-
     /**
      * @brief Initialize the GLFW window
      */
@@ -115,9 +128,16 @@ class Canvas {
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
     /**
-     * @brief Create a Vertex Buffer object
+     * @brief Create Vertex Buffer objects
      */
-    void createVertexBuffer();
+    void createVertexBuffers();
+
+    /**
+     * @brief Get the file descriptor of the vertex buffer.
+     *
+     * @returns int The file descriptor of the vertex buffer memory.
+     */
+    int getMemoryFd(VkDeviceMemory memory);
 
     /**
      * @brief Choose the best surface format for the swap chain
@@ -242,13 +262,11 @@ class Canvas {
     VkQueue graphicsQueue_;
     VkQueue presentQueue_;
 
-    VkBuffer vertexBuffer;
-    VkDeviceMemory vertexBufferMemory;
-    std::vector<Vertex> vertices = {
-        {0.0f, -0.5f},
-        {0.5f, 0.5f},
-        {-0.5f, 0.5f},
-    };
+    size_t numVertices;
+    VkBuffer xBuffer;
+    VkBuffer yBuffer;
+    VkDeviceMemory xBufferMemory;
+    VkDeviceMemory yBufferMemory;
 
     VkSwapchainKHR swapChain_;
     std::vector<VkImage> swapChainImages;
