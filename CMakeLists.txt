@@ -18,6 +18,7 @@ find_package(glfw3 3.3 REQUIRED)
 add_library(venturi_lib
     src/simulation.cpp
     src/simulation.cu
+    src/canvas.cpp
 )
 target_include_directories(venturi_lib PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(venturi_lib CUDA::cudart CUDA::curand Vulkan::Vulkan glfw)

@@ -2,11 +2,17 @@
 
 #include <cuda_runtime.h>
 
+#include <algorithm>
 #include <ctime>
+#include <limits>
+#include <optional>
 #include <random>
+#include <set>
 #include <stdexcept>
+#include <vector>
 
-Simulation::Simulation(const MarketParams& params) : params_(params) {
+Simulation::Simulation(const MarketParams& params)
+    : params_(params), rng(std::random_device{}()), normal_dist(0.0f, 1.0f) {
     // Copy MarketParams to device constant memory
     copyParamsToDevice(params_);
 
@@ -52,9 +58,6 @@ Simulation::Simulation(const MarketParams& params) : params_(params) {
     cudaMemset(state_.d_speed, 0, size);
     cudaMemset(state_.d_local_density, 0, size);
     cudaMemset(state_.d_execution_cost, 0, size);
-
-    std::mt19937 rng(std::random_device{}());
-    std::normal_distribution<float> normal_dist(0.0f, 1.0f);
 }
 
 void Simulation::computeLocalDensities() {
@@ -121,145 +124,6 @@ void Simulation::run() {
     for (int i = 0; i < params_.num_steps; ++i) {
         step();
     }
-}
-
-void Simulation::initWindow() {
-    // Initialize GLFW
-    if (!glfwInit()) {
-        throw std::runtime_error("Failed to initialize GLFW");
-    }
-
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-
-    window_ = glfwCreateWindow(WIDTH, HEIGHT, "Venturi Simulation", nullptr, nullptr);
-}
-
-void Simulation::createVulkanInstance() {
-    VkApplicationInfo appInfo{};
-    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "Venturi Simulation";
-    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.pEngineName = "No Engine";
-    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_0;
-
-    VkInstanceCreateInfo createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    createInfo.pApplicationInfo = &appInfo;
-
-    uint32_t glfwExtensionCount = 0;
-    const char** glfwExtensions;
-
-    glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-
-    createInfo.enabledExtensionCount = glfwExtensionCount;
-    createInfo.ppEnabledExtensionNames = glfwExtensions;
-    createInfo.enabledLayerCount = 0;
-
-    if (vkCreateInstance(&createInfo, nullptr, &instance_) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create Vulkan instance");
-    }
-}
-
-bool isDeviceSuitable(VkPhysicalDevice device) {
-    // For simplicity, assume the first device is suitable
-    // TODO: Check for features, queue families, etc.
-    return true;
-}
-
-struct QueueFamilyIndices {
-    int graphicsFamily = -1;
-
-    bool isComplete() { return graphicsFamily >= 0; }
-};
-
-QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
-    QueueFamilyIndices indices;
-
-    uint32_t queueFamilyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
-
-    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
-
-    int i = 0;
-    for (const auto& queueFamily : queueFamilies) {
-        if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-            indices.graphicsFamily = i;
-        }
-
-        if (indices.isComplete()) {
-            break;
-        }
-
-        i++;
-    }
-
-    return indices;
-}
-
-void Simulation::pickPhysicalDevice() {
-    uint32_t deviceCount = 0;
-    vkEnumeratePhysicalDevices(instance_, &deviceCount, nullptr);
-    if (deviceCount == 0) {
-        throw std::runtime_error("Failed to find GPUs with Vulkan support");
-    }
-
-    std::vector<VkPhysicalDevice> devices(deviceCount);
-    vkEnumeratePhysicalDevices(instance_, &deviceCount, devices.data());
-
-    for (const auto& device : devices) {
-        if (isDeviceSuitable(device)) {
-            physicalDevice_ = device;
-            break;
-        }
-    }
-
-    if (physicalDevice_ == VK_NULL_HANDLE)
-        throw std::runtime_error("Failed to find a suitable GPU");
-}
-
-void Simulation::createLogicalDevice() {
-    QueueFamilyIndices indices = findQueueFamilies(physicalDevice_);
-
-    VkDeviceQueueCreateInfo queueCreateInfo{};
-    queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    queueCreateInfo.queueFamilyIndex = indices.graphicsFamily;
-    queueCreateInfo.queueCount = 1;
-    float queuePriority = 1.0f;
-    queueCreateInfo.pQueuePriorities = &queuePriority;
-
-    VkPhysicalDeviceFeatures deviceFeatures{};
-    VkDeviceCreateInfo createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    createInfo.pQueueCreateInfos = &queueCreateInfo;
-    createInfo.queueCreateInfoCount = 1;
-    createInfo.pEnabledFeatures = &deviceFeatures;
-    createInfo.enabledExtensionCount = 0;
-    createInfo.enabledLayerCount = 0;
-
-    if (vkCreateDevice(physicalDevice_, &createInfo, nullptr, &device_) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create logical device");
-    }
-
-    vkGetDeviceQueue(device_, indices.graphicsFamily, 0, &graphicsQueue_);
-}
-void Simulation::initVulkan() {
-    createVulkanInstance();
-}
-
-void Simulation::mainLoop() {
-    while (!glfwWindowShouldClose(window_)) {
-        glfwPollEvents();
-    }
-}
-
-void Simulation::cleanup() {
-    vkDestroyDevice(device_, nullptr);
-    vkDestroyInstance(instance_, nullptr);
-    glfwDestroyWindow(window_);
-    glfwTerminate();
 }
 
 Simulation::~Simulation() {

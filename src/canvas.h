@@ -1,0 +1,271 @@
+#pragma once
+#include <vulkan/vulkan.h>
+#define GFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
+
+#include <array>
+#include <optional>
+#include <vector>
+
+struct QueueFamilyIndices {
+    std::optional<uint32_t> graphicsFamily;
+    std::optional<uint32_t> presentFamily;
+
+    bool isComplete() { return graphicsFamily.has_value() && presentFamily.has_value(); }
+};
+
+struct SwapChainSupportDetails {
+    VkSurfaceCapabilitiesKHR capabilities;
+    std::vector<VkSurfaceFormatKHR> formats;
+    std::vector<VkPresentModeKHR> presentModes;
+};
+
+struct Vertex {
+    float x, y;
+
+    static VkVertexInputBindingDescription getBindingDescription() {
+        VkVertexInputBindingDescription bindingDescription{};
+        bindingDescription.binding = 0;
+        bindingDescription.stride = sizeof(Vertex);
+        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        return bindingDescription;
+    }
+
+    static std::array<VkVertexInputAttributeDescription, 1> getAttributeDescriptions() {
+        std::array<VkVertexInputAttributeDescription, 1> attributeDescriptions{};
+
+        attributeDescriptions[0].binding = 0;
+        attributeDescriptions[0].location = 0;
+        attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+        attributeDescriptions[0].offset = offsetof(Vertex, x);
+
+        return attributeDescriptions;
+    }
+};
+
+class Canvas {
+   public:
+    Canvas() = default;
+
+    //    private:
+
+    /**
+     * @brief Initialize the GLFW window
+     */
+    void initWindow();
+
+    /**
+     * @brief Create a Vulkan Instance object
+     */
+    void createVulkanInstance();
+
+    /**
+     * @brief Check if the required device extensions are supported
+     *
+     * @param device The physical device to check
+     * @return true if all required extensions are supported
+     * @return false otherwise
+     */
+    bool checkDeviceExtensionSupport(VkPhysicalDevice device);
+
+    /**
+     * @brief Find the queue families supported by the given device
+     *
+     * @param device The physical device to query
+     * @return QueueFamilyIndices The indices of the supported queue families
+     */
+    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
+
+    /**
+     * @brief Query the swap chain support details for a given physical device
+     *
+     * @param device The physical device to query
+     * @return SwapChainSupportDetails The details of the swap chain support
+     */
+    SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
+
+    /**
+     * @brief Check if a physical device is suitable for the application's needs based on available
+     * extensions, swap chain support, and queue families
+     *
+     * @param device The physical device to check
+     * @return true if the device is suitable
+     * @return false otherwise
+     */
+    bool isDeviceSuitable(VkPhysicalDevice device);
+
+    /**
+     * @brief Pick a suitable physical device (GPU) for the application
+     */
+    void pickPhysicalDevice();
+
+    /**
+     * @brief Create a Logical Device object
+     */
+    void createLogicalDevice();
+
+    /**
+     * @brief Find a suitable memory type based on the type filter and required properties
+     *
+     * @param typeFilter The type filter to match against
+     * @param properties The required memory properties
+     * @return uint32_t The index of the suitable memory type
+     */
+    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+
+    /**
+     * @brief Create a Vertex Buffer object
+     */
+    void createVertexBuffer();
+
+    /**
+     * @brief Choose the best surface format for the swap chain
+     *
+     * @param availableFormats The list of available surface formats
+     * @return VkSurfaceFormatKHR The chosen surface format
+     */
+    VkSurfaceFormatKHR chooseSwapSurfaceFormat(
+        const std::vector<VkSurfaceFormatKHR>& availableFormats);
+
+    /**
+     * @brief Choose the best present mode for the swap chain
+     *
+     * @param availablePresentModes The list of available present modes
+     * @return VkPresentModeKHR The chosen present mode
+     */
+    VkPresentModeKHR chooseSwapPresentMode(
+        const std::vector<VkPresentModeKHR>& availablePresentModes);
+
+    /**
+     * @brief Choose the swap extent (resolution) for the swap chain
+     *
+     * @param capabilities The surface capabilities
+     * @return VkExtent2D The chosen swap extent
+     */
+    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
+
+    /**
+     * @brief Create a Surface object
+     */
+    void createSurface();
+
+    /**
+     * @brief Create a Swap Chain object
+     */
+    void createSwapChain();
+
+    /**
+     * @brief Create Image Views for the swap chain images
+     */
+    void createImageViews();
+
+    /**
+     * @brief Create a Render Pass object
+     */
+    void createRenderPass();
+
+    /**
+     * @brief Create a Shader Module object
+     *
+     * @param code The SPIR-V bytecode of the shader
+     * @return VkShaderModule The created shader module
+     */
+    VkShaderModule createShaderModule(const std::vector<char>& code);
+
+    /**
+     * @brief Create a Graphics Pipeline object
+     */
+    void createGraphicsPipeline();
+
+    /**
+     * @brief Create a Framebuffers object
+     */
+    void createFramebuffers();
+
+    /**
+     * @brief Create a Command Pool object
+     */
+    void createCommandPool();
+
+    /**
+     * @brief Create a Command Buffer object
+     */
+    void createCommandBuffer();
+
+    /**
+     * @brief Record commands into the command buffer
+     *
+     * @param commandBuffer The command buffer to record into
+     * @param imageIndex The index of the swap chain image to render to
+     */
+    void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+
+    /**
+     * @brief Create synchronization objects
+     */
+    void createSyncObjects();
+
+    /**
+     * @brief Initialize Vulkan components
+     */
+    void initVulkan();
+
+    /**
+     * @brief The main rendering loop
+     */
+    void mainLoop();
+
+    /**
+     * @brief Draw a single frame
+     */
+    void drawFrame();
+
+    /**
+     * @brief Cleanup Vulkan resources
+     */
+    void cleanup();
+
+    const uint32_t WIDTH = 800;
+    const uint32_t HEIGHT = 600;
+    const std::vector<const char*> DEVICE_EXTENSIONS = {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+    };
+
+    GLFWwindow* window_;
+    VkInstance instance_;
+
+    VkPhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
+    VkDevice device_;
+    VkSurfaceKHR surface_;
+
+    VkQueue graphicsQueue_;
+    VkQueue presentQueue_;
+
+    VkBuffer vertexBuffer;
+    VkDeviceMemory vertexBufferMemory;
+    std::vector<Vertex> vertices = {
+        {0.0f, -0.5f},
+        {0.5f, 0.5f},
+        {-0.5f, 0.5f},
+    };
+
+    VkSwapchainKHR swapChain_;
+    std::vector<VkImage> swapChainImages;
+    std::vector<VkImageView> swapChainImageViews;
+    std::vector<VkFramebuffer> swapChainFramebuffers;
+    VkFormat swapChainImageFormat;
+    VkExtent2D swapChainExtent;
+
+    VkRenderPass renderPass;
+
+    VkPipelineLayout pipelineLayout;
+    VkPipeline graphicsPipeline;
+
+    VkCommandPool commandPool;
+    VkCommandBuffer commandBuffer;
+
+    VkSemaphore imageAvailableSemaphore;
+    VkSemaphore renderFinishedSemaphore;
+    VkFence inFlightFence;
+};

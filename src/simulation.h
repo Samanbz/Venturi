@@ -1,8 +1,6 @@
 #pragma once
-#define GFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
+
 #include <curand_kernel.h>
-#include <vulkan/vulkan.h>
 
 #include <random>
 
@@ -83,14 +81,6 @@ class Simulation {
     friend class UpdateLogicFixture;
 
     //    private:
-    void initWindow();
-
-    void createVulkanInstance();
-    void pickPhysicalDevice();
-    void createLogicalDevice();
-    void initVulkan();
-    void mainLoop();
-    void cleanup();
 
     void computeLocalDensities();
     void computePressure();
@@ -104,13 +94,4 @@ class Simulation {
     // Random number generator for price updates
     std::mt19937 rng;
     std::normal_distribution<float> normal_dist;
-
-    // Vulkan components
-    const uint32_t WIDTH = 800;
-    const uint32_t HEIGHT = 600;
-    GLFWwindow* window_;
-    VkInstance instance_;
-    VkPhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
-    VkDevice device_;
-    VkQueue graphicsQueue_;
 };
