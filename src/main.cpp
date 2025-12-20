@@ -13,10 +13,10 @@ static void printBoundaries(const BoundaryPair& boundaries) {
 
 int main() {
     MarketParams params{};
-    params.num_agents = 10000;
+    params.num_agents = 100000;
     params.num_steps = 100000;
 
-    params.time_delta = 1.0f / 120.0f;  // Standard 30FPS
+    params.time_delta = 1.0f / 180.0f;  // Standard 30FPS
     params.price_init = 100.0f;
     params.price_randomness_stddev = 10.0f;  // Increased for visual noise
 
@@ -35,34 +35,22 @@ int main() {
     // Agent Parameters
     params.mass_alpha = 1.0f;
     params.mass_beta = 0.1f;
-    params.risk_mean = 0.5f;  // Lower risk aversion usually looks better visually
-    params.risk_stddev = 0.05f;
+    params.risk_mean = 0.0001f;  // Lower risk aversion usually looks better visually
+    params.risk_stddev = 0.8f;
 
     Canvas canvas{params.num_agents};
 
     auto [X_devicePtr, Y_devicePtr] = canvas.getCudaDevicePointers();
+    auto [fdWait, fdSignal] = canvas.exportSemaphores();
 
     Simulation sim{params, X_devicePtr, Y_devicePtr};
+    sim.importSemaphores(fdWait, fdSignal);
     sim.step();
 
     BoundaryPair boundaries = sim.getBoundaries();
     printBoundaries(boundaries);
     canvas.setBoundaries(boundaries);
 
-    while (!glfwWindowShouldClose(canvas.window_)) {
-        glfwPollEvents();
-
-        // 1. Run Physics
-        sim.step();
-
-        // 2. WAIT for Physics to finish writing to memory
-        cudaDeviceSynchronize();
-
-        // 3. Draw
-        canvas.drawFrame();
-
-        // 4. WAIT for Draw to finish reading memory
-        vkDeviceWaitIdle(canvas.device_);
-    }
+    canvas.mainLoop(sim);
     return 0;
 }

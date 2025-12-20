@@ -13,10 +13,12 @@ class Simulation {
 
     BoundaryPair getBoundaries() const;
 
+    void importSemaphores(int fdWait, int fdSignal);
+
     // Friend classes usually go at the end or top
     friend class UpdateLogicFixture;
 
-   private:
+    //    private:
     void computeLocalDensities();
     void computePressure();
     void updateSpeedInventoryExecutionCost();
@@ -30,4 +32,7 @@ class Simulation {
 
     std::mt19937 rng;
     std::normal_distribution<float> normal_dist;
+
+    cudaExternalSemaphore_t cudaWaitSemaphore = nullptr;
+    cudaExternalSemaphore_t cudaSignalSemaphore = nullptr;
 };

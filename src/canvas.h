@@ -13,6 +13,7 @@
 #include <optional>
 #include <vector>
 
+#include "simulation.h"
 #include "types.h"
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
@@ -44,6 +45,13 @@ class Canvas {
      * @return std::pair<float*, float*> The CUDA device pointers for the X and Y vertex buffers
      */
     std::pair<float*, float*> getCudaDevicePointers();
+
+    /**
+     * @brief Export the semaphores for synchronization with CUDA
+     *
+     * @return std::pair<int, int>
+     */
+    std::pair<int, int> exportSemaphores();
 
     /**
      * @brief Set the axis boundaries for rendering
@@ -214,6 +222,21 @@ class Canvas {
     void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
     /**
+     * @brief Create a semaphore that can be exported for inter-process or inter-API synchronization
+     *
+     * @return VkSemaphore The created exportable semaphore
+     */
+    VkSemaphore createExportableSemaphore();
+
+    /**
+     * @brief Get the file descriptor of a given semaphore
+     *
+     * @param VkSemaphore semaphore The semaphore to get the FD for
+     * @return int The file descriptor of the semaphore
+     */
+    int getSemaphoreFd(VkSemaphore semaphore);
+
+    /**
      * @brief Create synchronization objects
      */
     void createSyncObjects();
@@ -226,7 +249,7 @@ class Canvas {
     /**
      * @brief The main rendering loop
      */
-    void mainLoop();
+    void mainLoop(Simulation& sim);
 
     /**
      * @brief Draw a single frame
@@ -283,5 +306,8 @@ class Canvas {
 
     VkSemaphore imageAvailableSemaphore;
     VkSemaphore renderFinishedSemaphore;
+    VkSemaphore cudaFinishedSemaphore;
+    VkSemaphore vulkanFinishedSemaphore;
+
     VkFence inFlightFence;
 };

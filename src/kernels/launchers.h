@@ -12,6 +12,8 @@ extern void launchInitializeUniform(
     float* d_data, float min, float max, curandState* d_rngStates, int num_agents);
 extern void launchInitializeNormal(
     float* d_data, float mean, float stddev, curandState* d_rngStates, int num_agents);
+extern void launchInitializeLogNormal(
+    float* d_data, float mean, float stddev, curandState* d_rngStates, int num_agents);
 
 extern void launchCalculateSpatialHash(const float* d_inventory,
                                        const float* d_execution_cost,

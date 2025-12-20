@@ -38,6 +38,13 @@ std::pair<float*, float*> Canvas::getCudaDevicePointers() {
     return {ptrX, ptrY};
 }
 
+std::pair<int, int> Canvas::exportSemaphores() {
+    int fdVulkanFinished =
+        getSemaphoreFd(vulkanFinishedSemaphore);                 // CUDA waits on vulkan finished
+    int fdCudaFinished = getSemaphoreFd(cudaFinishedSemaphore);  // CUDA signals when done
+    return {fdVulkanFinished, fdCudaFinished};
+}
+
 void Canvas::setBoundaries(BoundaryPair boundaries, float padX, float padY) {
     float rangeX = boundaries.second.second - boundaries.second.first;
     float rangeY = boundaries.first.second - boundaries.first.first;
@@ -726,7 +733,42 @@ void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIn
     }
 }
 
+VkSemaphore Canvas::createExportableSemaphore() {
+    VkExportSemaphoreCreateInfo exportInfo{};
+    exportInfo.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO;
+    exportInfo.handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    semaphoreInfo.pNext = &exportInfo;
+
+    VkSemaphore semaphore;
+    if (vkCreateSemaphore(device_, &semaphoreInfo, nullptr, &semaphore) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create semaphore!");
+    }
+    return semaphore;
+}
+
+int Canvas::getSemaphoreFd(VkSemaphore semaphore) {
+    auto func = (PFN_vkGetSemaphoreFdKHR) vkGetDeviceProcAddr(device_, "vkGetSemaphoreFdKHR");
+    VkSemaphoreGetFdInfoKHR fdInfo{};
+    fdInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR;
+    fdInfo.semaphore = semaphore;
+    fdInfo.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+
+    int fd;
+    if (func(device_, &fdInfo, &fd) != VK_SUCCESS) {
+        throw std::runtime_error("failed to get semaphore fd!");
+    }
+    return fd;
+}
+
 void Canvas::createSyncObjects() {
+    // Making these exportable
+    cudaFinishedSemaphore = createExportableSemaphore();
+    vulkanFinishedSemaphore = createExportableSemaphore();
+
+    // This one doesn't need to be exportable
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
@@ -734,9 +776,9 @@ void Canvas::createSyncObjects() {
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    if (vkCreateSemaphore(device_, &semaphoreInfo, nullptr, &imageAvailableSemaphore) !=
+    if (vkCreateSemaphore(device_, &semaphoreInfo, nullptr, &renderFinishedSemaphore) !=
             VK_SUCCESS ||
-        vkCreateSemaphore(device_, &semaphoreInfo, nullptr, &renderFinishedSemaphore) !=
+        vkCreateSemaphore(device_, &semaphoreInfo, nullptr, &imageAvailableSemaphore) !=
             VK_SUCCESS ||
         vkCreateFence(device_, &fenceInfo, nullptr, &inFlightFence) != VK_SUCCESS) {
         throw std::runtime_error("failed to create synchronization objects!");
@@ -757,17 +799,20 @@ void Canvas::drawFrame() {
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    VkSemaphore waitSemaphores[] = {imageAvailableSemaphore};
-    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    submitInfo.waitSemaphoreCount = 1;
+    VkSemaphore waitSemaphores[] = {imageAvailableSemaphore, cudaFinishedSemaphore};
+    VkPipelineStageFlags waitStages[] = {
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,  // for imageAvailable
+        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT              // for cudaFinished
+    };
+    submitInfo.waitSemaphoreCount = 2;
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;
 
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
 
-    VkSemaphore signalSemaphores[] = {renderFinishedSemaphore};
-    submitInfo.signalSemaphoreCount = 1;
+    VkSemaphore signalSemaphores[] = {renderFinishedSemaphore, vulkanFinishedSemaphore};
+    submitInfo.signalSemaphoreCount = 2;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
     if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFence) != VK_SUCCESS) {
@@ -804,10 +849,28 @@ void Canvas::initVulkan() {
     createSyncObjects();
 }
 
-void Canvas::mainLoop() {
+#include <iostream>
+
+void Canvas::mainLoop(Simulation& sim) {
     while (!glfwWindowShouldClose(window_)) {
         glfwPollEvents();
+
+        // Draw first
+        // This consumes the 'cudaFinished' signal from the previous step.
+        // It renders the state computed in the previous iteration.
+        // It signals 'renderFinished' when done.
         drawFrame();
+
+        // Simulate second
+        // This waits for 'renderFinished' (from the line above).
+        // It computes the next state.
+        // It signals 'cudaFinished' for the next loop's drawFrame.
+        sim.step();
+
+        // Heartbeat: Print a dot every 60 frames
+        if (sim.state_.dt++ % 60 == 0) {
+            std::cout << "." << std::flush;
+        }
     }
     vkDeviceWaitIdle(device_);
 }
@@ -820,6 +883,9 @@ void Canvas::cleanup() {
 
     vkDestroySemaphore(device_, renderFinishedSemaphore, nullptr);
     vkDestroySemaphore(device_, imageAvailableSemaphore, nullptr);
+    vkDestroySemaphore(device_, cudaFinishedSemaphore, nullptr);
+    vkDestroySemaphore(device_, vulkanFinishedSemaphore, nullptr);
+
     vkDestroyFence(device_, inFlightFence, nullptr);
 
     vkDestroyCommandPool(device_, commandPool, nullptr);

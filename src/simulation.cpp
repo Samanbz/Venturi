@@ -68,8 +68,9 @@ Simulation::Simulation(const MarketParams& params, float* vk_X, float* vk_Y)
     // Initialize device memory using persistent RNG states
     launchInitializeExponential(state_.d_inventory, params.decay_rate, state_.d_rngStates,
                                 params.num_agents);
-    launchInitializeNormal(state_.d_risk_aversion, params.risk_mean, params.risk_stddev,
-                           state_.d_rngStates, params.num_agents);
+    // Initialize from log-normal to avoid negative values leading to NaNs later
+    launchInitializeLogNormal(state_.d_risk_aversion, params.risk_mean, params.risk_stddev,
+                              state_.d_rngStates, params.num_agents);
     cudaMemset(state_.d_cash, 0, size);
     cudaMemset(state_.d_speed, 0, size);
     cudaMemset(state_.d_local_density, 0, size);
@@ -101,6 +102,24 @@ BoundaryPair Simulation::getBoundaries() const {
     max_execution_cost = *exec_max_it;
 
     return {{min_inventory, max_inventory}, {min_execution_cost, max_execution_cost}};
+}
+
+void Simulation::importSemaphores(int fdWait, int fdSignal) {
+    // Import external semaphores for CUDA synchronization
+    cudaExternalSemaphoreHandleDesc semDescWait{};
+    semDescWait.type = cudaExternalSemaphoreHandleTypeOpaqueFd;
+    semDescWait.handle.fd = fdWait;
+
+    cudaExternalSemaphoreHandleDesc semDescSignal{};
+    semDescSignal.type = cudaExternalSemaphoreHandleTypeOpaqueFd;
+    semDescSignal.handle.fd = fdSignal;
+
+    cudaError_t err1 = cudaImportExternalSemaphore(&cudaWaitSemaphore, &semDescWait);
+    cudaError_t err2 = cudaImportExternalSemaphore(&cudaSignalSemaphore, &semDescSignal);
+
+    if (err1 != cudaSuccess || err2 != cudaSuccess) {
+        throw std::runtime_error("Failed to import external semaphores for CUDA");
+    }
 }
 
 void Simulation::computeLocalDensities() {
@@ -155,12 +174,21 @@ void Simulation::updatePrice() {
 }
 
 void Simulation::step() {
-    state_.dt++;
+    // Skip wait on first step to avoid deadlock
+    if (state_.dt > 0) {
+        cudaExternalSemaphoreWaitParams waitParams{};  // Defaults are fine for binary semaphores
+        cudaWaitExternalSemaphoresAsync(&cudaWaitSemaphore, &waitParams, 1,
+                                        0);  // 0 = Default Stream
+    }
 
+    state_.dt++;
     computeLocalDensities();
     computePressure();
     updateSpeedInventoryExecutionCost();
     updatePrice();
+
+    cudaExternalSemaphoreSignalParams signalParams{};
+    cudaSignalExternalSemaphoresAsync(&cudaSignalSemaphore, &signalParams, 1, 0);
 }
 
 void Simulation::run() {

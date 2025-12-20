@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "../common/test_common.h"
+#include "kernels/launchers.h"
 
 // Test fixture for spatial hashing and density computation
 class SpatialFixture : public BaseTestFixture {

@@ -8,6 +8,6 @@ layout(push_constant) uniform PushConstants {
 } push;
 
 void main() {
-    gl_PointSize = 1.0;
+    gl_PointSize = 0.5;
     gl_Position = push.projection * vec4(inX, inY, 0.0, 1.0);
 }

@@ -93,3 +93,26 @@ void launchInitializeNormal(
 
     initializeNormalKernel<<<numBlocks, blockSize>>>(d_data, mean, stddev, d_rngStates);
 }
+
+// Kernel to initialize array with log normal distribution (mean, stddev)
+__global__ void initializeLogNormalKernel(float* data,
+                                          float mean,
+                                          float stddev,
+                                          curandState* globalState) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= d_params.num_agents)
+        return;
+
+    curandState localState = globalState[idx];
+    float ln = curand_log_normal(&localState, mean, stddev);
+    data[idx] = ln;
+    globalState[idx] = localState;
+}
+
+void launchInitializeLogNormal(
+    float* d_data, float mean, float stddev, curandState* d_rngStates, int num_agents) {
+    int blockSize = 256;
+    int numBlocks = (num_agents + blockSize - 1) / blockSize;
+
+    initializeLogNormalKernel<<<numBlocks, blockSize>>>(d_data, mean, stddev, d_rngStates);
+}
