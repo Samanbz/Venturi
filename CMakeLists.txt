@@ -12,7 +12,7 @@ find_package(GTest REQUIRED)
 find_package(benchmark QUIET)
 find_package(Vulkan REQUIRED)
 find_package(glfw3 3.3 REQUIRED)
-
+find_package(glm REQUIRED)
 
 # Main library (shared between main executable and tests)
 add_library(venturi_lib
@@ -21,7 +21,7 @@ add_library(venturi_lib
     src/canvas.cpp
 )
 target_include_directories(venturi_lib PUBLIC ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(venturi_lib CUDA::cudart CUDA::curand Vulkan::Vulkan glfw)
+target_link_libraries(venturi_lib CUDA::cudart CUDA::curand Vulkan::Vulkan glfw glm::glm)
 
 # Main executable
 add_executable(venturi src/main.cpp)

@@ -1,4 +1,10 @@
 #pragma once
+
+// Force GLM to use radians
+#define GLM_FORCE_RADIANS
+// Force GLM to use Vulkan's Depth Range (0.0 to 1.0) instead of OpenGL's (-1.0 to 1.0)
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+
 #include <vulkan/vulkan.h>
 #define GFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -7,6 +13,7 @@
 #include <optional>
 #include <vector>
 
+#include "types.h"
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
     std::optional<uint32_t> presentFamily;
@@ -18,30 +25,6 @@ struct SwapChainSupportDetails {
     VkSurfaceCapabilitiesKHR capabilities;
     std::vector<VkSurfaceFormatKHR> formats;
     std::vector<VkPresentModeKHR> presentModes;
-};
-
-struct Vertex {
-    float x, y;
-
-    static VkVertexInputBindingDescription getBindingDescription() {
-        VkVertexInputBindingDescription bindingDescription{};
-        bindingDescription.binding = 0;
-        bindingDescription.stride = sizeof(Vertex);
-        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-        return bindingDescription;
-    }
-
-    static std::array<VkVertexInputAttributeDescription, 1> getAttributeDescriptions() {
-        std::array<VkVertexInputAttributeDescription, 1> attributeDescriptions{};
-
-        attributeDescriptions[0].binding = 0;
-        attributeDescriptions[0].location = 0;
-        attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
-        attributeDescriptions[0].offset = offsetof(Vertex, x);
-
-        return attributeDescriptions;
-    }
 };
 
 class Canvas {
@@ -61,6 +44,15 @@ class Canvas {
      * @return std::pair<float*, float*> The CUDA device pointers for the X and Y vertex buffers
      */
     std::pair<float*, float*> getCudaDevicePointers();
+
+    /**
+     * @brief Set the axis boundaries for rendering
+     *
+     * @param boundaries The boundary pairs for the Y and X axes
+     * @param padX Padding to apply to the X axis boundaries (in percent of range)
+     * @param padY Padding to apply to the Y axis boundaries (in percent of range)
+     */
+    void setBoundaries(BoundaryPair boundaries, float padX = 0.1f, float padY = 0.1f);
 
     //    private:
     /**
@@ -248,9 +240,15 @@ class Canvas {
 
     const uint32_t WIDTH = 800;
     const uint32_t HEIGHT = 600;
+
     const std::vector<const char*> DEVICE_EXTENSIONS = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     };
+
+    float minX = 0.0f;
+    float maxX = 1.0f;
+    float minY = 0.0f;
+    float maxY = 1.0f;
 
     GLFWwindow* window_;
     VkInstance instance_;

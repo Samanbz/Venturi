@@ -34,8 +34,8 @@ Simulation::Simulation(const MarketParams& params, float* vk_X, float* vk_Y)
         cudaMalloc(&state_.d_inventory, size);
         cudaMalloc(&state_.d_execution_cost, size);
     } else {
-        state_.d_inventory = vk_X;
-        state_.d_execution_cost = vk_Y;
+        state_.d_inventory = vk_Y;
+        state_.d_execution_cost = vk_X;
     }
 
     cudaMalloc(&state_.d_cash, size);
@@ -71,6 +71,33 @@ Simulation::Simulation(const MarketParams& params, float* vk_X, float* vk_Y)
     cudaMemset(state_.d_speed, 0, size);
     cudaMemset(state_.d_local_density, 0, size);
     cudaMemset(state_.d_execution_cost, 0, size);
+}
+
+BoundaryPair Simulation::getBoundaries() const {
+    // TODO: Optimize by using thrust or device reduction
+
+    float min_inventory, max_inventory;
+    float min_execution_cost, max_execution_cost;
+
+    // Copy inventories and execution costs back to host for boundary calculation
+    std::vector<float> h_inventory(params_.num_agents);
+    std::vector<float> h_execution_cost(params_.num_agents);
+
+    cudaMemcpy(h_inventory.data(), state_.d_inventory, params_.num_agents * sizeof(float),
+               cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_execution_cost.data(), state_.d_execution_cost, params_.num_agents * sizeof(float),
+               cudaMemcpyDeviceToHost);
+
+    auto [inv_min_it, inv_max_it] = std::minmax_element(h_inventory.begin(), h_inventory.end());
+    auto [exec_min_it, exec_max_it] =
+        std::minmax_element(h_execution_cost.begin(), h_execution_cost.end());
+
+    min_inventory = *inv_min_it;
+    max_inventory = *inv_max_it;
+    min_execution_cost = *exec_min_it;
+    max_execution_cost = *exec_max_it;
+
+    return {{min_inventory, max_inventory}, {min_execution_cost, max_execution_cost}};
 }
 
 void Simulation::computeLocalDensities() {
@@ -115,7 +142,7 @@ void Simulation::updateSpeedInventoryExecutionCost() {
     launchUpdateSpeedInventoryExecutionCost(
         state_.d_speed_term_1, state_.d_speed_term_2, state_.d_local_density, state_.d_agent_index,
         state_.pressure, state_.d_speed_sorted, state_.d_inventory_sorted, state_.d_inventory,
-        state_.d_execution_cost_sorted, params_.num_agents);
+        state_.d_execution_cost_sorted, state_.d_execution_cost, params_.num_agents);
 }
 
 void Simulation::updatePrice() {

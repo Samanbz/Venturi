@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cstring>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <limits>
 #include <set>
 #include <stdexcept>
@@ -34,6 +36,16 @@ std::pair<float*, float*> Canvas::getCudaDevicePointers() {
     float* ptrY = mapFDToCudaPointer(fdY, bufferSize);
 
     return {ptrX, ptrY};
+}
+
+void Canvas::setBoundaries(BoundaryPair boundaries, float padX, float padY) {
+    float rangeX = boundaries.second.second - boundaries.second.first;
+    float rangeY = boundaries.first.second - boundaries.first.first;
+
+    minY = boundaries.first.first - padY * rangeY;
+    maxY = boundaries.first.second + padY * rangeY;
+    minX = boundaries.second.first - padX * rangeX;
+    maxX = boundaries.second.second + padX * rangeX;
 }
 
 void Canvas::createVulkanInstance() {
@@ -568,10 +580,17 @@ void Canvas::createGraphicsPipeline() {
     dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
     dynamicState.pDynamicStates = dynamicStates.data();
 
+    // Define Push Constant Range for boundaries
+    VkPushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(glm::mat4);
+
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 0;
-    pipelineLayoutInfo.pushConstantRangeCount = 0;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
     if (vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &pipelineLayout) !=
         VK_SUCCESS) {
@@ -651,7 +670,7 @@ void Canvas::createCommandBuffer() {
 }
 
 void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
-    size_t bufferSize = numVertices * sizeof(Vertex);
+    size_t bufferSize = numVertices * 2 * sizeof(float);
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -688,6 +707,11 @@ void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIn
     scissor.offset = {0, 0};
     scissor.extent = swapChainExtent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    // Push constants for boundaries
+    glm::mat4 projection = glm::ortho(minX, maxX, maxY, minY, -1.0f, 1.0f);
+    vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                       sizeof(glm::mat4), &projection);
 
     VkBuffer vertexBuffers[] = {xBuffer, yBuffer};
     VkDeviceSize offsets[] = {0, 0};
