@@ -4,6 +4,8 @@
 
 #include "../../src/simulation.h"
 #include "../../src/types.h"
+#include "kernels/common.cuh"
+#include "kernels/launchers.h"
 
 // Base state container for simulation benchmarks
 struct BenchmarkState {
@@ -88,7 +90,7 @@ class SimulationFixture : public benchmark::Fixture {
         state.ensureCapacity(state.params.num_agents);
         copyParamsToDevice(state.params);
 
-        setupRNG(state.d_rngStates, state.params.num_agents, 1234ULL);
+        launchSetupRNG(state.d_rngStates, state.params.num_agents, 1234ULL);
 
         float p1 = 0.0f;  // min or mean
         float p2 = 0.0f;  // max or stddev

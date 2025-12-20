@@ -16,7 +16,7 @@ struct InitState : public BenchmarkState {
         cudaMalloc(&d_risk_aversion, n * sizeof(float));
         cudaMalloc(&d_rngStates, n * sizeof(curandState));
 
-        setupRNG(d_rngStates, n, 12345ULL);
+        launchSetupRNG(d_rngStates, n, 12345ULL);
     }
 
     void free_memory() override {
@@ -160,7 +160,7 @@ BENCHMARK_DEFINE_F(InitFixture, SetupRNG)(benchmark::State& state) {
     unsigned long long seed = 99999ULL;
 
     for (auto _ : state) {
-        setupRNG(g_init_state.d_rngStates, g_init_state.params.num_agents, seed);
+        launchSetupRNG(g_init_state.d_rngStates, g_init_state.params.num_agents, seed);
         cudaDeviceSynchronize();
     }
 

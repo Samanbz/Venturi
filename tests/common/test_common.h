@@ -12,6 +12,8 @@
 
 #include "../../src/simulation.h"
 #include "../../src/types.h"
+#include "kernels/common.cuh"
+#include "kernels/launchers.h"
 
 // Common base class for Venturi tests
 class BaseTestFixture : public ::testing::Test {

@@ -14,19 +14,30 @@ find_package(Vulkan REQUIRED)
 find_package(glfw3 3.3 REQUIRED)
 find_package(glm REQUIRED)
 
+# Recursively add all source files in src/
+file(GLOB_RECURSE VENTURI_SOURCES "src/*.cpp" "src/*.cu")
+list(FILTER VENTURI_SOURCES EXCLUDE REGEX ".*/src/main\\.cpp$")
+
 # Main library (shared between main executable and tests)
 add_library(venturi_lib
-    src/simulation.cpp
-    src/simulation.cu
-    src/canvas.cpp
+    ${VENTURI_SOURCES}
 )
+
+set_property(TARGET venturi_lib PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+
 target_include_directories(venturi_lib PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(venturi_lib CUDA::cudart CUDA::curand Vulkan::Vulkan glfw glm::glm)
+
+# Copy shaders to the build directory so executables can find them
+file(COPY ${CMAKE_SOURCE_DIR}/shaders DESTINATION ${CMAKE_BINARY_DIR})
 
 # Main executable
 add_executable(venturi src/main.cpp)
 target_link_libraries(venturi venturi_lib)
-target_compile_options(venturi PRIVATE $<$<CONFIG:Release>:-O2>)
+target_compile_options(venturi PRIVATE 
+    $<$<CONFIG:Release>:-O2> 
+    $<$<COMPILE_LANGUAGE:CUDA>:-Xcudafe=--diag_suppress=20044>
+)
 # Testing
 enable_testing()
 

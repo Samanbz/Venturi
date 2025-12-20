@@ -38,7 +38,7 @@ struct SpeedPressureState : public BenchmarkState {
         std::iota(h_indices.begin(), h_indices.end(), 0);
         cudaMemcpy(d_agent_indices, h_indices.data(), n * sizeof(int), cudaMemcpyHostToDevice);
 
-        setupRNG(d_rngStates, n, 12345ULL);
+        launchSetupRNG(d_rngStates, n, 12345ULL);
     }
 
     void free_memory() override {

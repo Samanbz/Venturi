@@ -13,12 +13,12 @@ static void printBoundaries(const BoundaryPair& boundaries) {
 
 int main() {
     MarketParams params{};
-    params.num_agents = 1000;
+    params.num_agents = 10000;
     params.num_steps = 100000;
 
-    params.time_delta = 1.0f / 60.0f;  // Standard 60FPS
+    params.time_delta = 1.0f / 120.0f;  // Standard 30FPS
     params.price_init = 100.0f;
-    params.price_randomness_stddev = 0.6f;  // Increased for visual noise
+    params.price_randomness_stddev = 10.0f;  // Increased for visual noise
 
     // Weaken the permanent feedback loop to ensure Sum(C1) < 1.0
     params.permanent_impact = 1e-5f;

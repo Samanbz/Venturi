@@ -20,7 +20,7 @@ class SimulationFixture : public BaseTestFixture {
         cudaMalloc(&d_rngStates, params.num_agents * sizeof(curandState));
 
         // Initialize RNG states once
-        setupRNG(d_rngStates, params.num_agents, 42ULL);
+        launchSetupRNG(d_rngStates, params.num_agents, 42ULL);
 
         // Allocate host memory for results
         h_inventory.resize(params.num_agents);
@@ -99,7 +99,7 @@ TEST_F(SimulationFixture, InventoriesAreReproducibleWithSameSeed) {
     std::vector<float> first_run = h_inventory;
 
     // Re-initialize RNG with same seed
-    setupRNG(d_rngStates, params.num_agents, 42ULL);
+    launchSetupRNG(d_rngStates, params.num_agents, 42ULL);
     launchInitializeExponential(d_inventory, params.decay_rate, d_rngStates, params.num_agents);
     copyInventoryToHost();
 
@@ -115,7 +115,7 @@ TEST_F(SimulationFixture, InventoriesDifferWithDifferentSeeds) {
     std::vector<float> first_run = h_inventory;
 
     // Re-initialize RNG with different seed
-    setupRNG(d_rngStates, params.num_agents, 43ULL);
+    launchSetupRNG(d_rngStates, params.num_agents, 43ULL);
     launchInitializeExponential(d_inventory, params.decay_rate, d_rngStates, params.num_agents);
     copyInventoryToHost();
 
@@ -172,7 +172,7 @@ TEST_F(SimulationFixture, RiskAversionsAreReproducibleWithSameSeed) {
     std::vector<float> first_run = h_risk_aversion;
 
     // Re-initialize RNG with same seed
-    setupRNG(d_rngStates, params.num_agents, 42ULL);
+    launchSetupRNG(d_rngStates, params.num_agents, 42ULL);
     launchInitializeNormal(d_risk_aversion, params.risk_mean, params.risk_stddev, d_rngStates,
                            params.num_agents);
     copyRiskAversionToHost();
@@ -215,7 +215,7 @@ TEST_F(SimulationFixture, SmallNumberOfAgents) {
     cudaMalloc(&d_small_risk, params.num_agents * sizeof(float));
     cudaMalloc(&d_small_rng, params.num_agents * sizeof(curandState));
 
-    setupRNG(d_small_rng, params.num_agents, 12345ULL);
+    launchSetupRNG(d_small_rng, params.num_agents, 12345ULL);
     launchInitializeExponential(d_small_inv, params.decay_rate, d_small_rng, params.num_agents);
     launchInitializeNormal(d_small_risk, params.risk_mean, params.risk_stddev, d_small_rng,
                            params.num_agents);
@@ -248,7 +248,7 @@ TEST_F(SimulationFixture, LargeNumberOfAgents) {
     cudaMalloc(&d_large_inv, params.num_agents * sizeof(float));
     cudaMalloc(&d_large_rng, params.num_agents * sizeof(curandState));
 
-    setupRNG(d_large_rng, params.num_agents, 12345ULL);
+    launchSetupRNG(d_large_rng, params.num_agents, 12345ULL);
     launchInitializeExponential(d_large_inv, params.decay_rate, d_large_rng, params.num_agents);
 
     // Spot check a few values

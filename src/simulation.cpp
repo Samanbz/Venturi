@@ -11,6 +11,9 @@
 #include <stdexcept>
 #include <vector>
 
+#include "kernels/common.cuh"
+#include "kernels/launchers.h"
+
 Simulation::Simulation(const MarketParams& params, float* vk_X, float* vk_Y)
     : params_(params), rng(std::random_device{}()), normal_dist(0.0f, 1.0f) {
     if (vk_X == nullptr ^ vk_Y == nullptr) {
@@ -60,7 +63,7 @@ Simulation::Simulation(const MarketParams& params, float* vk_X, float* vk_Y)
 
     // Initialize RNG states once with time-based seed
     unsigned long long seed = static_cast<unsigned long long>(time(nullptr));
-    setupRNG(state_.d_rngStates, params.num_agents, seed);
+    launchSetupRNG(state_.d_rngStates, params.num_agents, seed);
 
     // Initialize device memory using persistent RNG states
     launchInitializeExponential(state_.d_inventory, params.decay_rate, state_.d_rngStates,
