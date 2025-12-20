@@ -51,3 +51,5 @@ struct MarketParams {
     float risk_mean;    // mean for risk aversion initialization
     float risk_stddev;  // standard deviation for risk aversion initialization
 };
+
+using BoundaryPair = std::pair<std::pair<float, float>, std::pair<float, float>>;

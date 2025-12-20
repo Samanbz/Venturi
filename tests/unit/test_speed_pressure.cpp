@@ -104,9 +104,9 @@ TEST_F(SpeedPressureFixture, PressureConsistency) {
     float pressure = 0.0f;
     launchComputePressure(d_speed_term_1, d_speed_term_2, &pressure, params.num_agents);
 
-    launchUpdateSpeedInventoryExecutionCost(d_speed_term_1, d_speed_term_2, d_local_density,
-                                            d_agent_indices, pressure, d_speed, d_inventory,
-                                            d_inventory, d_execution_cost, params.num_agents);
+    launchUpdateSpeedInventoryExecutionCost(
+        d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices, pressure, d_speed,
+        d_inventory, d_inventory, d_execution_cost, d_execution_cost, params.num_agents);
     cudaDeviceSynchronize();
 
     copyFromDevice();
@@ -145,9 +145,9 @@ TEST_F(SpeedPressureFixture, NumericalAccuracy) {
     float gpu_pressure = 0.0f;
     launchComputePressure(d_speed_term_1, d_speed_term_2, &gpu_pressure, params.num_agents);
 
-    launchUpdateSpeedInventoryExecutionCost(d_speed_term_1, d_speed_term_2, d_local_density,
-                                            d_agent_indices, gpu_pressure, d_speed, d_inventory,
-                                            d_inventory, d_execution_cost, params.num_agents);
+    launchUpdateSpeedInventoryExecutionCost(
+        d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices, gpu_pressure, d_speed,
+        d_inventory, d_inventory, d_execution_cost, d_execution_cost, params.num_agents);
     cudaDeviceSynchronize();
 
     copyFromDevice();
@@ -216,9 +216,9 @@ TEST_F(SpeedPressureFixture, BoundaryConditions_ZeroDensity) {
 
     float pressure = 0.0f;
     launchComputePressure(d_speed_term_1, d_speed_term_2, &pressure, params.num_agents);
-    launchUpdateSpeedInventoryExecutionCost(d_speed_term_1, d_speed_term_2, d_local_density,
-                                            d_agent_indices, pressure, d_speed, d_inventory,
-                                            d_inventory, d_execution_cost, params.num_agents);
+    launchUpdateSpeedInventoryExecutionCost(
+        d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices, pressure, d_speed,
+        d_inventory, d_inventory, d_execution_cost, d_execution_cost, params.num_agents);
     cudaDeviceSynchronize();
 
     copyFromDevice();
@@ -250,9 +250,9 @@ TEST_F(SpeedPressureFixture, BoundaryConditions_TimeMaturity) {
 
     float pressure = 0.0f;
     launchComputePressure(d_speed_term_1, d_speed_term_2, &pressure, params.num_agents);
-    launchUpdateSpeedInventoryExecutionCost(d_speed_term_1, d_speed_term_2, d_local_density,
-                                            d_agent_indices, pressure, d_speed, d_inventory,
-                                            d_inventory, d_execution_cost, params.num_agents);
+    launchUpdateSpeedInventoryExecutionCost(
+        d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices, pressure, d_speed,
+        d_inventory, d_inventory, d_execution_cost, d_execution_cost, params.num_agents);
     cudaDeviceSynchronize();
 
     copyFromDevice();

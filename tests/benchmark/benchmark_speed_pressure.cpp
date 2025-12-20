@@ -127,7 +127,7 @@ BENCHMARK_DEFINE_F(SpeedPressureFixture, ComputeSpeed)(benchmark::State& state) 
             g_speed_pressure_state.d_local_density, g_speed_pressure_state.d_agent_indices,
             pressure, g_speed_pressure_state.d_speed, g_speed_pressure_state.d_inventory,
             g_speed_pressure_state.d_inventory, g_speed_pressure_state.d_execution_cost,
-            g_speed_pressure_state.params.num_agents);
+            g_speed_pressure_state.d_execution_cost, g_speed_pressure_state.params.num_agents);
         cudaDeviceSynchronize();
     }
 }
@@ -150,7 +150,7 @@ BENCHMARK_DEFINE_F(SpeedPressureFixture, FullSpeedPressureStep)(benchmark::State
             g_speed_pressure_state.d_local_density, g_speed_pressure_state.d_agent_indices,
             pressure, g_speed_pressure_state.d_speed, g_speed_pressure_state.d_inventory,
             g_speed_pressure_state.d_inventory, g_speed_pressure_state.d_execution_cost,
-            g_speed_pressure_state.params.num_agents);
+            g_speed_pressure_state.d_execution_cost, g_speed_pressure_state.params.num_agents);
         cudaDeviceSynchronize();
     }
 }

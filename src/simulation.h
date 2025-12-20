@@ -59,7 +59,8 @@ extern void launchUpdateSpeedInventoryExecutionCost(const float* d_speed_term_1,
                                                     float* d_speed,
                                                     float* d_inventory_sorted,
                                                     float* d_inventory_original,
-                                                    float* d_execution_cost,
+                                                    float* d_execution_cost_sorted,
+                                                    float* d_execution_cost_original,
                                                     int num_agents);
 
 extern void launchComputeSpeedTerms(const float* d_risk_aversion,
@@ -78,10 +79,11 @@ class Simulation {
     void step();
     void run();
 
+    BoundaryPair getBoundaries() const;
+
     friend class UpdateLogicFixture;
 
     //    private:
-
     void computeLocalDensities();
     void computePressure();
     void updateSpeedInventoryExecutionCost();

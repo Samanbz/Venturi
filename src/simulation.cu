@@ -311,15 +311,17 @@ __global__ void computeSpeedTermsKernel(const float* __restrict__ risk_aversion,
         (2 * local_temporary_impact);
 }
 
-__global__ void UpdateSpeedInventoryExecutionCost(const float* __restrict__ speed_term_1,
-                                                  const float* __restrict__ speed_term_2,
-                                                  const float* __restrict__ local_density,
-                                                  const int* __restrict__ agent_indices,
-                                                  const float pressure,
-                                                  float* __restrict__ speed,
-                                                  float* __restrict__ inventory_sorted,
-                                                  float* __restrict__ inventory_original,
-                                                  float* __restrict__ execution_cost) {
+__global__ void updateSpeedInventoryExecutionCostKernel(
+    const float* __restrict__ speed_term_1,
+    const float* __restrict__ speed_term_2,
+    const float* __restrict__ local_density,
+    const int* __restrict__ agent_indices,
+    const float pressure,
+    float* __restrict__ speed,
+    float* __restrict__ inventory_sorted,
+    float* __restrict__ inventory_original,
+    float* __restrict__ execution_cost_sorted,
+    float* __restrict__ execution_cost_original) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= d_params.num_agents)
         return;
@@ -335,7 +337,11 @@ __global__ void UpdateSpeedInventoryExecutionCost(const float* __restrict__ spee
     int original_idx = agent_indices[idx];
     inventory_original[original_idx] = new_inv;
 
-    execution_cost[idx] = local_temporary_impact * speed[idx];
+    float new_execution_cost = local_temporary_impact * speed[idx];
+    execution_cost_sorted[idx] = new_execution_cost;
+
+    // Scatter back to original location
+    execution_cost_original[original_idx] = new_execution_cost;
 }
 
 void launchComputeSpeedTerms(const float* d_risk_aversion,
@@ -364,14 +370,16 @@ void launchUpdateSpeedInventoryExecutionCost(const float* d_speed_term_1,
                                              float* d_speed,
                                              float* d_inventory_sorted,
                                              float* d_inventory_original,
-                                             float* d_execution_cost,
+                                             float* d_execution_cost_sorted,
+                                             float* d_execution_cost_original,
                                              int num_agents) {
     int blockSize = 256;
     int numBlocks = (num_agents + blockSize - 1) / blockSize;
 
-    UpdateSpeedInventoryExecutionCost<<<numBlocks, blockSize>>>(
+    updateSpeedInventoryExecutionCostKernel<<<numBlocks, blockSize>>>(
         d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices, pressure, d_speed,
-        d_inventory_sorted, d_inventory_original, d_execution_cost);
+        d_inventory_sorted, d_inventory_original, d_execution_cost_sorted,
+        d_execution_cost_original);
 }
 
 struct TupleSum {
