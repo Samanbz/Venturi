@@ -10,24 +10,24 @@ struct MarketState {
     float* d_inventory;       // Q_t^a, agent inventories
     float* d_cash;            // X_t^a, agent cash balances
     float* d_execution_cost;  // \delta_t^a, agent execution costs
+    float* d_risk_aversion;   // phi^a, agent risk aversion parameters
 
     float* d_speed_term_1;
     float* d_speed_term_2;
-    float* d_speed;          // nu_t^a, agent trading speeds
-    float* d_local_density;  // rho_t^a, agent local densities
+    float* d_speed;  // nu_t^a, agent trading speeds
 
+    float* d_risk_aversion_sorted;
     float* d_inventory_sorted;       // Q_t^a, agent inventories
     float* d_cash_sorted;            // X_t^a, agent cash balances
     float* d_execution_cost_sorted;  // \delta_t^a, agent execution costs
     float* d_speed_sorted;           // nu_t^a, agent trading speeds
-    float* d_local_density_sorted;   // rho_t^a, agent local densities
+    float* d_local_density_sorted;  // rho_t^a, agent local densities, always sorted by spatial hash
 
     int* d_cell_start;   // Spatial grid cell start indices
     int* d_cell_end;     // Spatial grid cell end indices
     int* d_agent_hash;   // Agent's cell indices
     int* d_agent_index;  // Agent indices sorted by cell
 
-    float* d_risk_aversion;    // phi^a, agent risk aversion parameters
     curandState* d_rngStates;  // RNG states for each agent (persistent)
 };
 

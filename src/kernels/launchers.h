@@ -26,16 +26,18 @@ extern void launchFindCellBounds(const int* d_sorted_hashes,
                                  int num_agents);
 
 extern void launchSortByKey(int* d_keys, int* d_values, int num_agents);
-extern void launchReorderData(const int* sorted_indices,
-                              const float* in_inventory,
-                              const float* in_execution_cost,
-                              const float* in_cash,
-                              const float* in_speed,
-                              float* out_inventory,
-                              float* out_execution_cost,
-                              float* out_cash,
-                              float* out_speed,
-                              int num_agents);
+void launchReorderData(const int* sorted_indices,
+                       const float* in_inventory,
+                       const float* in_execution_cost,
+                       const float* in_cash,
+                       const float* in_speed,
+                       const float* in_risk_aversion,
+                       float* out_inventory,
+                       float* out_execution_cost,
+                       float* out_cash,
+                       float* out_speed,
+                       float* out_risk_aversion,
+                       int num_agents);
 extern void launchComputeLocalDensities(const float* d_inventory,
                                         const float* d_execution_cost,
                                         const int* d_cell_start_idx,

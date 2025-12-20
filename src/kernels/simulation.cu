@@ -5,6 +5,7 @@
 #include <thrust/tuple.h>
 
 #include <ctime>
+
 #include "common.cuh"
 #include "types.h"
 
@@ -36,11 +37,13 @@ __global__ void reorderDataKernel(const int* __restrict__ sorted_indices,
                                   const float* __restrict__ in_cost,
                                   const float* __restrict__ in_cash,
                                   const float* __restrict__ in_speed,
+                                  const float* __restrict__ in_risk_aversion,
                                   // Output Arrays (Write-Only)
                                   float* __restrict__ out_inventory,
                                   float* __restrict__ out_cost,
                                   float* __restrict__ out_cash,
-                                  float* __restrict__ out_speed) {
+                                  float* __restrict__ out_speed,
+                                  float* __restrict__ out_risk_aversion) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= d_params.num_agents)
         return;
@@ -51,6 +54,7 @@ __global__ void reorderDataKernel(const int* __restrict__ sorted_indices,
     out_cost[idx] = in_cost[old_idx];
     out_cash[idx] = in_cash[old_idx];
     out_speed[idx] = in_speed[old_idx];
+    out_risk_aversion[idx] = in_risk_aversion[old_idx];
 }
 
 __global__ void findCellBoundsKernel(const int* sorted_hashes, int* cell_start, int* cell_end) {
@@ -168,17 +172,19 @@ void launchReorderData(const int* sorted_indices,
                        const float* in_execution_cost,
                        const float* in_cash,
                        const float* in_speed,
+                       const float* in_risk_aversion,
                        float* out_inventory,
                        float* out_execution_cost,
                        float* out_cash,
                        float* out_speed,
+                       float* out_risk_aversion,
                        int num_agents) {
     int blockSize = 256;
     int numBlocks = (num_agents + blockSize - 1) / blockSize;
 
-    reorderDataKernel<<<numBlocks, blockSize>>>(sorted_indices, in_inventory, in_execution_cost,
-                                                in_cash, in_speed, out_inventory,
-                                                out_execution_cost, out_cash, out_speed);
+    reorderDataKernel<<<numBlocks, blockSize>>>(
+        sorted_indices, in_inventory, in_execution_cost, in_cash, in_speed, in_risk_aversion,
+        out_inventory, out_execution_cost, out_cash, out_speed, out_risk_aversion);
     // No sync here - letting caller control synchronization for better performance
 }
 
@@ -237,13 +243,15 @@ __global__ void updateSpeedInventoryExecutionCostKernel(
     speed[idx] = pressure * speed_term_1[idx] - speed_term_2[idx];
 
     float new_inv = inventory_sorted[idx] + speed[idx] * d_params.time_delta;
+    // Clamp new inventory to 0 if it goes negative
+    new_inv = fmaxf(new_inv, 0.0f);
     inventory_sorted[idx] = new_inv;
 
     // Scatter back to original location
     int original_idx = agent_indices[idx];
     inventory_original[original_idx] = new_inv;
 
-    float new_execution_cost = local_temporary_impact * speed[idx];
+    float new_execution_cost = -local_temporary_impact * speed[idx];
     execution_cost_sorted[idx] = new_execution_cost;
 
     // Scatter back to original location

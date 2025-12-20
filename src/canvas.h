@@ -261,8 +261,8 @@ class Canvas {
      */
     void cleanup();
 
-    const uint32_t WIDTH = 1080;
-    const uint32_t HEIGHT = 720;
+    const uint32_t WIDTH = 1920;
+    const uint32_t HEIGHT = 1080;
 
     const std::vector<const char*> DEVICE_EXTENSIONS = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
