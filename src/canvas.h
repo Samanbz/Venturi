@@ -57,8 +57,12 @@ class Canvas {
      * @param boundaries The boundary pairs for the Y and X axes
      * @param padX Padding to apply to the X axis boundaries (in percent of range)
      * @param padY Padding to apply to the Y axis boundaries (in percent of range)
+     * @param immediate Whether to set the boundaries immediately or interpolate to them
      */
-    void setBoundaries(BoundaryPair boundaries, float padX = 0.1f, float padY = 0.1f);
+    void setBoundaries(BoundaryPair boundaries,
+                       float padX = 0.1f,
+                       float padY = 0.1f,
+                       bool immediate = false);
 
     //    private:
     /**
@@ -270,6 +274,11 @@ class Canvas {
     float maxX = 1.0f;
     float minY = 0.0f;
     float maxY = 1.0f;
+
+    float targetMinX = 0.0f;
+    float targetMaxX = 1.0f;
+    float targetMinY = 0.0f;
+    float targetMaxY = 1.0f;
 
     GLFWwindow* window_;
     VkInstance instance_;

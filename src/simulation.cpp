@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <ctime>
+#include <iostream>
 #include <limits>
 #include <optional>
 #include <random>
@@ -14,7 +15,8 @@
 #include "kernels/common.cuh"
 #include "kernels/launchers.h"
 
-Simulation::Simulation(const MarketParams& params, float* vk_X, float* vk_Y)
+Simulation::Simulation(
+    const MarketParams& params, float* vk_X, float* vk_Y, PlotVar xVar, PlotVar yVar)
     : params_(params), rng(std::random_device{}()), normal_dist(0.0f, 1.0f) {
     if (vk_X == nullptr ^ vk_Y == nullptr) {
         throw std::invalid_argument("Both vk_X and vk_Y must be provided or both must be nullptr");
@@ -33,18 +35,46 @@ Simulation::Simulation(const MarketParams& params, float* vk_X, float* vk_Y)
     // Allocate device memory for agent-specific arrays
     size_t size = params.num_agents * sizeof(float);
 
-    if (!externalMemoryProvided) {
-        cudaMalloc(&state_.d_inventory, size);
-        cudaMalloc(&state_.d_execution_cost, size);
-    } else {
-        state_.d_inventory = vk_Y;
-        state_.d_execution_cost = vk_X;
+    // Helper to get pointer reference by enum
+    auto getPtrRef = [&](PlotVar var) -> float*& {
+        switch (var) {
+            case PlotVar::Inventory:
+                return state_.d_inventory;
+            case PlotVar::ExecutionCost:
+                return state_.d_execution_cost;
+            case PlotVar::Cash:
+                return state_.d_cash;
+            case PlotVar::Speed:
+                return state_.d_speed;
+            case PlotVar::RiskAversion:
+                return state_.d_risk_aversion;
+            case PlotVar::LocalDensity:
+                return state_.d_local_density;
+            default:
+                throw std::runtime_error("Unknown PlotVar");
+        }
+    };
+
+    // Assign external memory if applicable
+    if (externalMemoryProvided) {
+        getPtrRef(xVar) = vk_X;
+        d_plot_x = vk_X;
+
+        getPtrRef(yVar) = vk_Y;
+        d_plot_y = vk_Y;
     }
 
-    cudaMalloc(&state_.d_cash, size);
-    cudaMalloc(&state_.d_speed, size);
-    cudaMalloc(&state_.d_local_density, size);
-    cudaMalloc(&state_.d_risk_aversion, size);
+    // Allocate the rest
+    std::vector<PlotVar> allVars = {PlotVar::Inventory,    PlotVar::ExecutionCost,
+                                    PlotVar::Cash,         PlotVar::Speed,
+                                    PlotVar::RiskAversion, PlotVar::LocalDensity};
+
+    for (auto var : allVars) {
+        float*& ptr = getPtrRef(var);
+        if (ptr == nullptr) {
+            cudaMalloc(&ptr, size);
+        }
+    }
 
     // Allocate sorted arrays and intermediate buffers
     cudaMalloc(&state_.d_inventory_sorted, size);
@@ -69,36 +99,61 @@ Simulation::Simulation(const MarketParams& params, float* vk_X, float* vk_Y)
     // Initialize from log-normal to avoid negative values leading to NaNs later
     launchInitializeLogNormal(state_.d_risk_aversion, params.risk_mean, params.risk_stddev,
                               state_.d_rngStates, params.num_agents);
-    cudaMemset(state_.d_cash, 0, size);
-    cudaMemset(state_.d_speed, 0, size);
-    cudaMemset(state_.d_execution_cost, 0, size);
+
+    // Initialize others to 0
+    if (state_.d_cash != vk_X && state_.d_cash != vk_Y)
+        cudaMemset(state_.d_cash, 0, size);
+    if (state_.d_speed != vk_X && state_.d_speed != vk_Y)
+        cudaMemset(state_.d_speed, 0, size);
+    if (state_.d_execution_cost != vk_X && state_.d_execution_cost != vk_Y)
+        cudaMemset(state_.d_execution_cost, 0, size);
+
+    // If mapped to external memory, we should still initialize them if they are outputs/state
+    // But if they are inputs initialized by kernels above (like inventory), we are good.
+    // Cash starts at 0.
+    if (state_.d_cash == vk_X || state_.d_cash == vk_Y)
+        cudaMemset(state_.d_cash, 0, size);
+    if (state_.d_execution_cost == vk_X || state_.d_execution_cost == vk_Y)
+        cudaMemset(state_.d_execution_cost, 0, size);
 }
 
 BoundaryPair Simulation::getBoundaries() const {
     // TODO: Optimize by using thrust or device reduction
 
-    float min_inventory, max_inventory;
-    float min_execution_cost, max_execution_cost;
+    float min_y, max_y;
+    float min_x, max_x;
 
     // Copy inventories and execution costs back to host for boundary calculation
-    std::vector<float> h_inventory(params_.num_agents);
-    std::vector<float> h_execution_cost(params_.num_agents);
+    std::vector<float> h_y(params_.num_agents);
+    std::vector<float> h_x(params_.num_agents);
 
-    cudaMemcpy(h_inventory.data(), state_.d_inventory, params_.num_agents * sizeof(float),
-               cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_execution_cost.data(), state_.d_execution_cost, params_.num_agents * sizeof(float),
-               cudaMemcpyDeviceToHost);
+    if (d_plot_y) {
+        cudaMemcpy(h_y.data(), d_plot_y, params_.num_agents * sizeof(float),
+                   cudaMemcpyDeviceToHost);
+    } else {
+        // Fallback if not set (e.g. unit tests)
+        cudaMemcpy(h_y.data(), state_.d_inventory, params_.num_agents * sizeof(float),
+                   cudaMemcpyDeviceToHost);
+    }
 
-    auto [inv_min_it, inv_max_it] = std::minmax_element(h_inventory.begin(), h_inventory.end());
-    auto [exec_min_it, exec_max_it] =
-        std::minmax_element(h_execution_cost.begin(), h_execution_cost.end());
+    if (d_plot_x) {
+        cudaMemcpy(h_x.data(), d_plot_x, params_.num_agents * sizeof(float),
+                   cudaMemcpyDeviceToHost);
+    } else {
+        // Fallback
+        cudaMemcpy(h_x.data(), state_.d_execution_cost, params_.num_agents * sizeof(float),
+                   cudaMemcpyDeviceToHost);
+    }
 
-    min_inventory = *inv_min_it;
-    max_inventory = *inv_max_it;
-    min_execution_cost = *exec_min_it;
-    max_execution_cost = *exec_max_it;
+    auto [y_min_it, y_max_it] = std::minmax_element(h_y.begin(), h_y.end());
+    auto [x_min_it, x_max_it] = std::minmax_element(h_x.begin(), h_x.end());
 
-    return {{min_inventory, max_inventory}, {min_execution_cost, max_execution_cost}};
+    min_y = *y_min_it;
+    max_y = *y_max_it;
+    min_x = *x_min_it;
+    max_x = *x_max_it;
+
+    return {{min_y, max_y}, {min_x, max_x}};
 }
 
 void Simulation::importSemaphores(int fdWait, int fdSignal) {
@@ -157,10 +212,10 @@ void Simulation::computePressure() {
 void Simulation::updateAgentState() {
     // Compute the trading speed for each agent based on their risk aversion, local density, and
     // pressure
-    launchUpdateAgentState(
-        state_.d_speed_term_1, state_.d_speed_term_2, state_.d_local_density, state_.d_agent_index,
-        state_.pressure, state_.d_speed, state_.d_inventory_sorted, state_.d_inventory,
-        state_.d_execution_cost_sorted, state_.d_execution_cost, params_.num_agents);
+    launchUpdateAgentState(state_.d_speed_term_1, state_.d_speed_term_2, state_.d_local_density,
+                           state_.d_agent_index, state_.pressure, state_.d_speed,
+                           state_.d_inventory, state_.d_execution_cost, state_.d_cash, state_.price,
+                           params_.num_agents);
 }
 
 void Simulation::updatePrice() {

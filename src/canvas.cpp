@@ -45,14 +45,21 @@ std::pair<int, int> Canvas::exportSemaphores() {
     return {fdVulkanFinished, fdCudaFinished};
 }
 
-void Canvas::setBoundaries(BoundaryPair boundaries, float padX, float padY) {
+void Canvas::setBoundaries(BoundaryPair boundaries, float padX, float padY, bool immediate) {
     float rangeX = boundaries.second.second - boundaries.second.first;
     float rangeY = boundaries.first.second - boundaries.first.first;
 
-    minY = boundaries.first.first - padY * rangeY;
-    maxY = boundaries.first.second + padY * rangeY;
-    minX = boundaries.second.first - padX * rangeX;
-    maxX = boundaries.second.second + padX * rangeX;
+    targetMinY = boundaries.first.first - padY * rangeY;
+    targetMaxY = boundaries.first.second + padY * rangeY;
+    targetMinX = boundaries.second.first - padX * rangeX;
+    targetMaxX = boundaries.second.second + padX * rangeX;
+
+    if (immediate) {
+        minY = targetMinY;
+        maxY = targetMaxY;
+        minX = targetMinX;
+        maxX = targetMaxX;
+    }
 }
 
 void Canvas::createVulkanInstance() {
@@ -878,10 +885,19 @@ void Canvas::mainLoop(Simulation& sim) {
         // It signals 'cudaFinished' for the next loop's drawFrame.
         sim.step();
 
+        // Interpolate boundaries
+        float alpha = 0.01f;
+        minX += (targetMinX - minX) * alpha;
+        maxX += (targetMaxX - maxX) * alpha;
+        minY += (targetMinY - minY) * alpha;
+        maxY += (targetMaxY - maxY) * alpha;
+
         // Heartbeat: Print a dot every 60 frames
-        if (sim.state_.dt++ % 60 == 0) {
+        if (sim.state_.dt % 60 == 0) {
             std::cout << "." << std::flush;
         }
+
+        setBoundaries(sim.getBoundaries());
     }
     vkDeviceWaitIdle(device_);
 }

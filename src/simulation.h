@@ -3,9 +3,15 @@
 
 #include "types.h"
 
+enum class PlotVar { Inventory, ExecutionCost, Cash, Speed, RiskAversion, LocalDensity };
+
 class Simulation {
    public:
-    Simulation(const MarketParams& params, float* vk_X = nullptr, float* vk_Y = nullptr);
+    Simulation(const MarketParams& params,
+               float* vk_X = nullptr,
+               float* vk_Y = nullptr,
+               PlotVar xVar = PlotVar::ExecutionCost,
+               PlotVar yVar = PlotVar::Inventory);
     ~Simulation();
 
     void step();
@@ -35,4 +41,7 @@ class Simulation {
 
     cudaExternalSemaphore_t cudaWaitSemaphore = nullptr;
     cudaExternalSemaphore_t cudaSignalSemaphore = nullptr;
+
+    float* d_plot_x = nullptr;
+    float* d_plot_y = nullptr;
 };
