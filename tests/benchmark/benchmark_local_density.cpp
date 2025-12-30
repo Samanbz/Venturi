@@ -108,13 +108,10 @@ class LocalDensityFixture : public SimulationFixture {
                              g_local_density_state.d_cell_end, num_agents);
 
         // Also run ReorderData once so sorted arrays are populated for Density benchmark
-        launchReorderData(g_local_density_state.d_agent_indices, g_local_density_state.d_inventory,
-                          g_local_density_state.d_execution_cost, g_local_density_state.d_cash,
-                          g_local_density_state.d_speed, g_local_density_state.d_risk_aversion,
-                          g_local_density_state.d_inventory_sorted,
-                          g_local_density_state.d_execution_cost_sorted,
-                          g_local_density_state.d_cash_sorted, g_local_density_state.d_speed_sorted,
-                          g_local_density_state.d_risk_aversion_sorted, num_agents);
+        launchReorderData(
+            g_local_density_state.d_agent_indices, num_agents, g_local_density_state.d_inventory,
+            g_local_density_state.d_inventory_sorted, g_local_density_state.d_execution_cost,
+            g_local_density_state.d_execution_cost_sorted);
 
         cudaDeviceSynchronize();
     }
@@ -131,12 +128,9 @@ class LocalDensityFixtureCustom : public LocalDensityFixture {
 BENCHMARK_DEFINE_F(LocalDensityFixture, ReorderData)(benchmark::State& state) {
     for (auto _ : state) {
         launchReorderData(
-            g_local_density_state.d_agent_indices, g_local_density_state.d_inventory,
-            g_local_density_state.d_execution_cost, g_local_density_state.d_cash,
-            g_local_density_state.d_speed, g_local_density_state.d_risk_aversion,
-            g_local_density_state.d_inventory_sorted, g_local_density_state.d_execution_cost_sorted,
-            g_local_density_state.d_cash_sorted, g_local_density_state.d_speed_sorted,
-            g_local_density_state.d_risk_aversion_sorted, g_local_density_state.params.num_agents);
+            g_local_density_state.d_agent_indices, g_local_density_state.params.num_agents,
+            g_local_density_state.d_inventory, g_local_density_state.d_inventory_sorted,
+            g_local_density_state.d_execution_cost, g_local_density_state.d_execution_cost_sorted);
         cudaDeviceSynchronize();
     }
     state.SetItemsProcessed(state.iterations() * g_local_density_state.params.num_agents);
@@ -151,7 +145,8 @@ BENCHMARK_DEFINE_F(LocalDensityFixture, ComputeLocalDensities)(benchmark::State&
         launchComputeLocalDensities(
             g_local_density_state.d_inventory_sorted, g_local_density_state.d_execution_cost_sorted,
             g_local_density_state.d_cell_start, g_local_density_state.d_cell_end,
-            g_local_density_state.d_local_density, g_local_density_state.params.num_agents);
+            g_local_density_state.d_agent_indices, g_local_density_state.d_local_density,
+            g_local_density_state.params.num_agents);
         cudaDeviceSynchronize();
     }
     state.SetItemsProcessed(state.iterations() * g_local_density_state.params.num_agents);
@@ -180,7 +175,8 @@ BENCHMARK_DEFINE_F(LocalDensityFixtureCustom, ComputeLocalDensities_HighDensity)
         launchComputeLocalDensities(
             g_local_density_state.d_inventory_sorted, g_local_density_state.d_execution_cost_sorted,
             g_local_density_state.d_cell_start, g_local_density_state.d_cell_end,
-            g_local_density_state.d_local_density, g_local_density_state.params.num_agents);
+            g_local_density_state.d_agent_indices, g_local_density_state.d_local_density,
+            g_local_density_state.params.num_agents);
         cudaDeviceSynchronize();
     }
     state.SetItemsProcessed(state.iterations() * g_local_density_state.params.num_agents);

@@ -141,9 +141,9 @@ TEST_F(UpdateLogicFixture, InventoryDirectionalityAndIntegration) {
     launchComputePressure(d_speed_term_1, d_speed_term_2, &pressure, params.num_agents);
 
     // Update
-    launchUpdateSpeedInventoryExecutionCost(
-        d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices, pressure, d_speed,
-        d_inventory, d_inventory, d_execution_cost, d_execution_cost, params.num_agents);
+    launchUpdateAgentState(d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices,
+                           pressure, d_speed, d_inventory, d_inventory, d_execution_cost,
+                           d_execution_cost, params.num_agents);
     cudaDeviceSynchronize();
 
     // Backup old inventory
@@ -245,9 +245,9 @@ TEST_F(UpdateLogicFixture, ExecutionCostScaling) {
     // Force pressure to 0 to isolate term2
     float pressure = 0.0f;
 
-    launchUpdateSpeedInventoryExecutionCost(
-        d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices, pressure, d_speed,
-        d_inventory, d_inventory, d_execution_cost, d_execution_cost, params.num_agents);
+    launchUpdateAgentState(d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices,
+                           pressure, d_speed, d_inventory, d_inventory, d_execution_cost,
+                           d_execution_cost, params.num_agents);
     cudaDeviceSynchronize();
 
     copyFromDevice();

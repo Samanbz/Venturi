@@ -21,7 +21,7 @@ class Simulation {
     //    private:
     void computeLocalDensities();
     void computePressure();
-    void updateSpeedInventoryExecutionCost();
+    void updateAgentState();
     void updatePrice();
 
     bool externalMemoryProvided;

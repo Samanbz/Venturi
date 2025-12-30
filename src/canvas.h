@@ -33,8 +33,6 @@ class Canvas {
     Canvas(size_t numVertices) : numVertices(numVertices) {
         initWindow();
         initVulkan();
-        // mainLoop();
-        // cleanup();
     }
 
     ~Canvas() { cleanup(); }

@@ -299,7 +299,7 @@ TEST_F(SpatialFixture, LocalDensityAllPositive) {
     launchSortByKey(d_agent_hash, d_agent_indices, params.num_agents);
     launchFindCellBounds(d_agent_hash, d_cell_start, d_cell_end, params.num_agents);
     launchComputeLocalDensities(d_inventory, d_execution_cost, d_cell_start, d_cell_end,
-                                d_local_density, params.num_agents);
+                                d_agent_indices, d_local_density, params.num_agents);
     cudaDeviceSynchronize();
 
     copyDensityToHost();
@@ -337,7 +337,7 @@ TEST_F(SpatialFixture, LocalDensityNonZeroForIdenticalPoints) {
     launchSortByKey(d_agent_hash, d_agent_indices, params.num_agents);
     launchFindCellBounds(d_agent_hash, d_cell_start, d_cell_end, params.num_agents);
     launchComputeLocalDensities(d_inventory, d_execution_cost, d_cell_start, d_cell_end,
-                                d_local_density, params.num_agents);
+                                d_agent_indices, d_local_density, params.num_agents);
     cudaDeviceSynchronize();
 
     copyDensityToHost();
@@ -378,7 +378,7 @@ TEST_F(SpatialFixture, SmallNumberOfAgents) {
     launchSortByKey(d_agent_hash, d_agent_indices, params.num_agents);
     launchFindCellBounds(d_agent_hash, d_cell_start, d_cell_end, params.num_agents);
     launchComputeLocalDensities(d_inventory, d_execution_cost, d_cell_start, d_cell_end,
-                                d_local_density, params.num_agents);
+                                d_agent_indices, d_local_density, params.num_agents);
     cudaDeviceSynchronize();
 
     cudaError_t err = cudaGetLastError();

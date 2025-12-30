@@ -122,7 +122,7 @@ BENCHMARK_DEFINE_F(SpeedPressureFixture, ComputeSpeed)(benchmark::State& state) 
     cudaDeviceSynchronize();
 
     for (auto _ : state) {
-        launchUpdateSpeedInventoryExecutionCost(
+        launchUpdateAgentState(
             g_speed_pressure_state.d_speed_term_1, g_speed_pressure_state.d_speed_term_2,
             g_speed_pressure_state.d_local_density, g_speed_pressure_state.d_agent_indices,
             pressure, g_speed_pressure_state.d_speed, g_speed_pressure_state.d_inventory,
@@ -145,7 +145,7 @@ BENCHMARK_DEFINE_F(SpeedPressureFixture, FullSpeedPressureStep)(benchmark::State
                               g_speed_pressure_state.d_speed_term_2, &pressure,
                               g_speed_pressure_state.params.num_agents);
 
-        launchUpdateSpeedInventoryExecutionCost(
+        launchUpdateAgentState(
             g_speed_pressure_state.d_speed_term_1, g_speed_pressure_state.d_speed_term_2,
             g_speed_pressure_state.d_local_density, g_speed_pressure_state.d_agent_indices,
             pressure, g_speed_pressure_state.d_speed, g_speed_pressure_state.d_inventory,

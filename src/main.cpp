@@ -45,7 +45,6 @@ int main() {
 
     Simulation sim{params, X_devicePtr, Y_devicePtr};
     sim.importSemaphores(fdWait, fdSignal);
-    sim.step();
 
     BoundaryPair boundaries = sim.getBoundaries();
     printBoundaries(boundaries);

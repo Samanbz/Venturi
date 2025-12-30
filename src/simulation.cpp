@@ -43,15 +43,12 @@ Simulation::Simulation(const MarketParams& params, float* vk_X, float* vk_Y)
 
     cudaMalloc(&state_.d_cash, size);
     cudaMalloc(&state_.d_speed, size);
-    cudaMalloc(&state_.d_local_density_sorted, size);
+    cudaMalloc(&state_.d_local_density, size);
     cudaMalloc(&state_.d_risk_aversion, size);
 
     // Allocate sorted arrays and intermediate buffers
     cudaMalloc(&state_.d_inventory_sorted, size);
-    cudaMalloc(&state_.d_cash_sorted, size);
-    cudaMalloc(&state_.d_speed_sorted, size);
     cudaMalloc(&state_.d_execution_cost_sorted, size);
-    cudaMalloc(&state_.d_risk_aversion_sorted, size);
     cudaMalloc(&state_.d_speed_term_1, size);
     cudaMalloc(&state_.d_speed_term_2, size);
 
@@ -74,7 +71,6 @@ Simulation::Simulation(const MarketParams& params, float* vk_X, float* vk_Y)
                               state_.d_rngStates, params.num_agents);
     cudaMemset(state_.d_cash, 0, size);
     cudaMemset(state_.d_speed, 0, size);
-    cudaMemset(state_.d_local_density_sorted, 0, size);
     cudaMemset(state_.d_execution_cost, 0, size);
 }
 
@@ -138,36 +134,33 @@ void Simulation::computeLocalDensities() {
     launchFindCellBounds(state_.d_agent_hash, state_.d_cell_start, state_.d_cell_end,
                          params_.num_agents);
 
-    launchReorderData(state_.d_agent_index, state_.d_inventory, state_.d_execution_cost,
-                      state_.d_cash, state_.d_speed, state_.d_risk_aversion,
-                      state_.d_inventory_sorted, state_.d_execution_cost_sorted,
-                      state_.d_cash_sorted, state_.d_speed_sorted, state_.d_risk_aversion_sorted,
-                      params_.num_agents);
+    launchReorderData(state_.d_agent_index, params_.num_agents, state_.d_inventory,
+                      state_.d_inventory_sorted, state_.d_execution_cost,
+                      state_.d_execution_cost_sorted);
 
     // Compute local densities for each agent using SPH within their spatial cells
     launchComputeLocalDensities(state_.d_inventory_sorted, state_.d_execution_cost_sorted,
-                                state_.d_cell_start, state_.d_cell_end,
-                                state_.d_local_density_sorted, params_.num_agents);
+                                state_.d_cell_start, state_.d_cell_end, state_.d_agent_index,
+                                state_.d_local_density, params_.num_agents);
 }
 
 void Simulation::computePressure() {
-    launchComputeSpeedTerms(state_.d_risk_aversion_sorted, state_.d_local_density_sorted,
-                            state_.d_inventory_sorted, state_.d_speed_term_1, state_.d_speed_term_2,
-                            state_.dt, params_.num_agents);
+    launchComputeSpeedTerms(state_.d_risk_aversion, state_.d_local_density, state_.d_inventory,
+                            state_.d_speed_term_1, state_.d_speed_term_2, state_.dt,
+                            params_.num_agents);
 
     // Compute the pressure based on the speed terms
     launchComputePressure(state_.d_speed_term_1, state_.d_speed_term_2, &state_.pressure,
                           params_.num_agents);
 }
 
-void Simulation::updateSpeedInventoryExecutionCost() {
+void Simulation::updateAgentState() {
     // Compute the trading speed for each agent based on their risk aversion, local density, and
     // pressure
-    launchUpdateSpeedInventoryExecutionCost(
-        state_.d_speed_term_1, state_.d_speed_term_2, state_.d_local_density_sorted,
-        state_.d_agent_index, state_.pressure, state_.d_speed_sorted, state_.d_inventory_sorted,
-        state_.d_inventory, state_.d_execution_cost_sorted, state_.d_execution_cost,
-        params_.num_agents);
+    launchUpdateAgentState(
+        state_.d_speed_term_1, state_.d_speed_term_2, state_.d_local_density, state_.d_agent_index,
+        state_.pressure, state_.d_speed, state_.d_inventory_sorted, state_.d_inventory,
+        state_.d_execution_cost_sorted, state_.d_execution_cost, params_.num_agents);
 }
 
 void Simulation::updatePrice() {
@@ -187,7 +180,7 @@ void Simulation::step() {
     state_.dt++;
     computeLocalDensities();
     computePressure();
-    updateSpeedInventoryExecutionCost();
+    updateAgentState();
     updatePrice();
 
     if (cudaSignalSemaphore != nullptr) {
@@ -215,15 +208,12 @@ Simulation::~Simulation() {
 
     cudaFree(state_.d_cash);
     cudaFree(state_.d_speed);
-    cudaFree(state_.d_local_density_sorted);
+    cudaFree(state_.d_local_density);
     cudaFree(state_.d_risk_aversion);
     cudaFree(state_.d_rngStates);
 
     cudaFree(state_.d_inventory_sorted);
-    cudaFree(state_.d_cash_sorted);
-    cudaFree(state_.d_speed_sorted);
     cudaFree(state_.d_execution_cost_sorted);
-    cudaFree(state_.d_risk_aversion_sorted);
     cudaFree(state_.d_speed_term_1);
     cudaFree(state_.d_speed_term_2);
 
