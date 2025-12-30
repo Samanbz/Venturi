@@ -29,6 +29,7 @@ class UpdateLogicFixture : public BaseTestFixture {
         cudaMalloc(&d_speed_term_2, size);
         cudaMalloc(&d_speed, size);
         cudaMalloc(&d_execution_cost, size);
+        cudaMalloc(&d_cash, size);
         cudaMalloc(&d_agent_indices, params.num_agents * sizeof(int));
 
         // Initialize identity mapping for indices
@@ -44,6 +45,7 @@ class UpdateLogicFixture : public BaseTestFixture {
         h_speed_term_2.resize(params.num_agents);
         h_speed.resize(params.num_agents);
         h_execution_cost.resize(params.num_agents);
+        h_cash.resize(params.num_agents);
     }
 
     void freeDeviceMemory() {
@@ -61,6 +63,8 @@ class UpdateLogicFixture : public BaseTestFixture {
             cudaFree(d_speed);
         if (d_execution_cost)
             cudaFree(d_execution_cost);
+        if (d_cash)
+            cudaFree(d_cash);
         if (d_agent_indices)
             cudaFree(d_agent_indices);
     }
@@ -72,6 +76,7 @@ class UpdateLogicFixture : public BaseTestFixture {
         cudaMemcpy(d_local_density, h_local_density.data(), size, cudaMemcpyHostToDevice);
         cudaMemcpy(d_speed_term_1, h_speed_term_1.data(), size, cudaMemcpyHostToDevice);
         cudaMemcpy(d_speed_term_2, h_speed_term_2.data(), size, cudaMemcpyHostToDevice);
+        cudaMemcpy(d_cash, h_cash.data(), size, cudaMemcpyHostToDevice);
     }
 
     void copyFromDevice() {
@@ -79,6 +84,7 @@ class UpdateLogicFixture : public BaseTestFixture {
         cudaMemcpy(h_speed.data(), d_speed, size, cudaMemcpyDeviceToHost);
         cudaMemcpy(h_inventory.data(), d_inventory, size, cudaMemcpyDeviceToHost);
         cudaMemcpy(h_execution_cost.data(), d_execution_cost, size, cudaMemcpyDeviceToHost);
+        cudaMemcpy(h_cash.data(), d_cash, size, cudaMemcpyDeviceToHost);
     }
 
     float* d_inventory = nullptr;
@@ -88,6 +94,7 @@ class UpdateLogicFixture : public BaseTestFixture {
     float* d_speed_term_2 = nullptr;
     float* d_speed = nullptr;
     float* d_execution_cost = nullptr;
+    float* d_cash = nullptr;
     int* d_agent_indices = nullptr;
 
     std::vector<float> h_inventory;
@@ -97,6 +104,7 @@ class UpdateLogicFixture : public BaseTestFixture {
     std::vector<float> h_speed_term_2;
     std::vector<float> h_speed;
     std::vector<float> h_execution_cost;
+    std::vector<float> h_cash;
 
     // Helpers to access Simulation private members
     void setPressure(Simulation& sim, float p) { sim.state_.pressure = p; }
@@ -142,8 +150,8 @@ TEST_F(UpdateLogicFixture, InventoryDirectionalityAndIntegration) {
 
     // Update
     launchUpdateAgentState(d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices,
-                           pressure, d_speed, d_inventory, d_inventory, d_execution_cost,
-                           d_execution_cost, params.num_agents);
+                           pressure, d_speed, d_inventory, d_execution_cost, d_cash, 100.0f,
+                           params.num_agents);
     cudaDeviceSynchronize();
 
     // Backup old inventory
@@ -246,8 +254,8 @@ TEST_F(UpdateLogicFixture, ExecutionCostScaling) {
     float pressure = 0.0f;
 
     launchUpdateAgentState(d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices,
-                           pressure, d_speed, d_inventory, d_inventory, d_execution_cost,
-                           d_execution_cost, params.num_agents);
+                           pressure, d_speed, d_inventory, d_execution_cost, d_cash, 100.0f,
+                           params.num_agents);
     cudaDeviceSynchronize();
 
     copyFromDevice();
@@ -308,4 +316,45 @@ TEST_F(UpdateLogicFixture, MultiStepSimulation) {
     float total_initial = 100.0f * params.num_agents;
     float total_final = std::accumulate(final_inventory.begin(), final_inventory.end(), 0.0f);
     EXPECT_LT(total_final, total_initial) << "Total inventory should decrease";
+}
+
+TEST_F(UpdateLogicFixture, CashAccumulation) {
+    params.num_agents = 1;
+    params.time_delta = 0.1f;
+    params.temporary_impact = 0.1f;
+    params.permanent_impact = 0.0f;
+    copyParamsToDevice(params);
+
+    h_inventory[0] = 100.0f;
+    h_risk_aversion[0] = 0.5f;
+    h_local_density[0] = 0.0f;  // No congestion for simple math
+    h_cash[0] = 1000.0f;        // Initial cash
+
+    copyToDevice();
+
+    // We need to set up speed terms such that we get a known speed.
+    // Or we can just let the kernel calculate speed and then verify cash based on that speed.
+
+    int dt = 0;
+    launchComputeSpeedTerms(d_risk_aversion, d_local_density, d_inventory, d_speed_term_1,
+                            d_speed_term_2, dt, params.num_agents);
+
+    float pressure = 0.0f;  // Assume no pressure for simplicity, or calculate it.
+    // If pressure is 0, speed = -term2.
+
+    float price = 100.0f;
+
+    launchUpdateAgentState(d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices,
+                           pressure, d_speed, d_inventory, d_execution_cost, d_cash, price,
+                           params.num_agents);
+
+    cudaDeviceSynchronize();
+    copyFromDevice();
+
+    float speed = h_speed[0];
+    float expected_cash_change =
+        -speed * (price + params.temporary_impact * speed) * params.time_delta;
+    float expected_cash = 1000.0f + expected_cash_change;
+
+    EXPECT_NEAR(h_cash[0], expected_cash, 1e-3f);
 }

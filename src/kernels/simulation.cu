@@ -201,10 +201,10 @@ __global__ void updateAgentStateKernel(const float* __restrict__ speed_term_1,
                                        const int* __restrict__ agent_indices,
                                        const float pressure,
                                        float* __restrict__ speed,
-                                       float* __restrict__ inventory_sorted,
-                                       float* __restrict__ inventory_original,
-                                       float* __restrict__ execution_cost_sorted,
-                                       float* __restrict__ execution_cost_original) {
+                                       float* __restrict__ inventory,
+                                       float* __restrict__ execution_cost,
+                                       float* __restrict__ cash,
+                                       float price) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= d_params.num_agents)
         return;
@@ -213,20 +213,15 @@ __global__ void updateAgentStateKernel(const float* __restrict__ speed_term_1,
         d_params.temporary_impact * (1 + d_params.congestion_sensitivity * local_density[idx]);
     speed[idx] = pressure * speed_term_1[idx] - speed_term_2[idx];
 
-    float new_inv = inventory_sorted[idx] + speed[idx] * d_params.time_delta;
+    float new_inv = inventory[idx] + speed[idx] * d_params.time_delta;
     // Clamp new inventory to 0 if it goes negative
     new_inv = fmaxf(new_inv, 0.0f);
-    inventory_sorted[idx] = new_inv;
-
-    // Scatter back to original location
-    int original_idx = agent_indices[idx];
-    inventory_original[original_idx] = new_inv;
-
+    inventory[idx] = new_inv;
     float new_execution_cost = -local_temporary_impact * speed[idx];
-    execution_cost_sorted[idx] = new_execution_cost;
+    execution_cost[idx] = new_execution_cost;
 
-    // Scatter back to original location
-    execution_cost_original[original_idx] = new_execution_cost;
+    cash[idx] +=
+        -speed[idx] * (price + d_params.temporary_impact * speed[idx]) * d_params.time_delta;
 }
 
 void launchComputeSpeedTerms(const float* d_risk_aversion,
@@ -249,18 +244,17 @@ void launchUpdateAgentState(const float* d_speed_term_1,
                             const int* d_agent_indices,
                             float pressure,
                             float* d_speed,
-                            float* d_inventory_sorted,
-                            float* d_inventory_original,
-                            float* d_execution_cost_sorted,
-                            float* d_execution_cost_original,
+                            float* d_inventory,
+                            float* d_execution_cost,
+                            float* d_cash,
+                            float price,
                             int num_agents) {
     int blockSize = 256;
     int numBlocks = (num_agents + blockSize - 1) / blockSize;
 
     updateAgentStateKernel<<<numBlocks, blockSize>>>(
         d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices, pressure, d_speed,
-        d_inventory_sorted, d_inventory_original, d_execution_cost_sorted,
-        d_execution_cost_original);
+        d_inventory, d_execution_cost, d_cash, price);
 }
 
 void launchComputePressure(const float* d_speed_term_1,
