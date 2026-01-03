@@ -31,6 +31,7 @@ class UpdateLogicFixture : public BaseTestFixture {
         cudaMalloc(&d_execution_cost, size);
         cudaMalloc(&d_cash, size);
         cudaMalloc(&d_agent_indices, params.num_agents * sizeof(int));
+        cudaMalloc(&d_pressure_buffer, 2 * sizeof(float));
 
         // Initialize identity mapping for indices
         std::vector<int> h_indices(params.num_agents);
@@ -67,6 +68,8 @@ class UpdateLogicFixture : public BaseTestFixture {
             cudaFree(d_cash);
         if (d_agent_indices)
             cudaFree(d_agent_indices);
+        if (d_pressure_buffer)
+            cudaFree(d_pressure_buffer);
     }
 
     void copyToDevice() {
@@ -96,6 +99,7 @@ class UpdateLogicFixture : public BaseTestFixture {
     float* d_execution_cost = nullptr;
     float* d_cash = nullptr;
     int* d_agent_indices = nullptr;
+    float* d_pressure_buffer = nullptr;
 
     std::vector<float> h_inventory;
     std::vector<float> h_risk_aversion;
@@ -142,16 +146,17 @@ TEST_F(UpdateLogicFixture, InventoryDirectionalityAndIntegration) {
     // Calculate speed terms
     int dt = 0;
     launchComputeSpeedTerms(d_risk_aversion, d_local_density, d_inventory, d_speed_term_1,
-                            d_speed_term_2, dt, params.num_agents);
+                            d_speed_term_2, dt, params);
 
     // Calculate pressure
     float pressure = 0.0f;
-    launchComputePressure(d_speed_term_1, d_speed_term_2, &pressure, params.num_agents);
+    launchComputePressure(d_speed_term_1, d_speed_term_2, d_pressure_buffer, &pressure,
+                          params.num_agents);
 
     // Update
     launchUpdateAgentState(d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices,
                            pressure, d_speed, d_inventory, d_execution_cost, d_cash, 100.0f,
-                           params.num_agents);
+                           params);
     cudaDeviceSynchronize();
 
     // Backup old inventory
@@ -248,14 +253,14 @@ TEST_F(UpdateLogicFixture, ExecutionCostScaling) {
 
     int dt = 0;
     launchComputeSpeedTerms(d_risk_aversion, d_local_density, d_inventory, d_speed_term_1,
-                            d_speed_term_2, dt, params.num_agents);
+                            d_speed_term_2, dt, params);
 
     // Force pressure to 0 to isolate term2
     float pressure = 0.0f;
 
     launchUpdateAgentState(d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices,
                            pressure, d_speed, d_inventory, d_execution_cost, d_cash, 100.0f,
-                           params.num_agents);
+                           params);
     cudaDeviceSynchronize();
 
     copyFromDevice();
@@ -337,7 +342,7 @@ TEST_F(UpdateLogicFixture, CashAccumulation) {
 
     int dt = 0;
     launchComputeSpeedTerms(d_risk_aversion, d_local_density, d_inventory, d_speed_term_1,
-                            d_speed_term_2, dt, params.num_agents);
+                            d_speed_term_2, dt, params);
 
     float pressure = 0.0f;  // Assume no pressure for simplicity, or calculate it.
     // If pressure is 0, speed = -term2.
@@ -345,8 +350,7 @@ TEST_F(UpdateLogicFixture, CashAccumulation) {
     float price = 100.0f;
 
     launchUpdateAgentState(d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices,
-                           pressure, d_speed, d_inventory, d_execution_cost, d_cash, price,
-                           params.num_agents);
+                           pressure, d_speed, d_inventory, d_execution_cost, d_cash, price, params);
 
     cudaDeviceSynchronize();
     copyFromDevice();

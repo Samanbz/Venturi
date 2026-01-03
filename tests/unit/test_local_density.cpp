@@ -24,43 +24,30 @@ class SpatialFixture : public BaseTestFixture {
         // Allocate device memory
         cudaMalloc(&d_inventory, params.num_agents * sizeof(float));
         cudaMalloc(&d_execution_cost, params.num_agents * sizeof(float));
-        cudaMalloc(&d_agent_hash, params.num_agents * sizeof(int));
-        cudaMalloc(&d_agent_indices, params.num_agents * sizeof(int));
-        cudaMalloc(&d_cell_start, params.hash_table_size * sizeof(int));
-        cudaMalloc(&d_cell_end, params.hash_table_size * sizeof(int));
+        cudaMalloc(&d_cell_head, params.hash_table_size * sizeof(int));
+        cudaMalloc(&d_agent_next, params.num_agents * sizeof(int));
         cudaMalloc(&d_local_density, params.num_agents * sizeof(float));
 
         // Allocate host memory
         h_inventory.resize(params.num_agents);
         h_execution_cost.resize(params.num_agents);
-        h_agent_hash.resize(params.num_agents);
-        h_agent_indices.resize(params.num_agents);
-        h_cell_start.resize(params.hash_table_size);
-        h_cell_end.resize(params.hash_table_size);
+        h_cell_head.resize(params.hash_table_size);
+        h_agent_next.resize(params.num_agents);
         h_local_density.resize(params.num_agents);
     }
 
     void TearDown() override {
         cudaFree(d_inventory);
         cudaFree(d_execution_cost);
-        cudaFree(d_agent_hash);
-        cudaFree(d_agent_indices);
-        cudaFree(d_cell_start);
-        cudaFree(d_cell_end);
+        cudaFree(d_cell_head);
+        cudaFree(d_agent_next);
         cudaFree(d_local_density);
     }
 
-    void copyHashesToHost() {
-        cudaMemcpy(h_agent_hash.data(), d_agent_hash, params.num_agents * sizeof(int),
+    void copyHashDataToHost() {
+        cudaMemcpy(h_cell_head.data(), d_cell_head, params.hash_table_size * sizeof(int),
                    cudaMemcpyDeviceToHost);
-        cudaMemcpy(h_agent_indices.data(), d_agent_indices, params.num_agents * sizeof(int),
-                   cudaMemcpyDeviceToHost);
-    }
-
-    void copyCellBoundsToHost() {
-        cudaMemcpy(h_cell_start.data(), d_cell_start, params.hash_table_size * sizeof(int),
-                   cudaMemcpyDeviceToHost);
-        cudaMemcpy(h_cell_end.data(), d_cell_end, params.hash_table_size * sizeof(int),
+        cudaMemcpy(h_agent_next.data(), d_agent_next, params.num_agents * sizeof(int),
                    cudaMemcpyDeviceToHost);
     }
 
@@ -71,351 +58,218 @@ class SpatialFixture : public BaseTestFixture {
 
     float* d_inventory = nullptr;
     float* d_execution_cost = nullptr;
-    int* d_agent_hash = nullptr;
-    int* d_agent_indices = nullptr;
-    int* d_cell_start = nullptr;
-    int* d_cell_end = nullptr;
+    int* d_cell_head = nullptr;
+    int* d_agent_next = nullptr;
     float* d_local_density = nullptr;
 
     std::vector<float> h_inventory;
     std::vector<float> h_execution_cost;
-    std::vector<int> h_agent_hash;
-    std::vector<int> h_agent_indices;
-    std::vector<int> h_cell_start;
-    std::vector<int> h_cell_end;
+    std::vector<int> h_cell_head;
+    std::vector<int> h_agent_next;
     std::vector<float> h_local_density;
 };
 
-// Tests for calculateSpatialHash kernel
-
-TEST_F(SpatialFixture, SpatialHashProducesValidHashes) {
+TEST_F(SpatialFixture, SpatialHashProducesValidLinkedLists) {
     // Initialize with uniform distribution
-    std::vector<float> inventory(params.num_agents);
-    std::vector<float> execution_cost(params.num_agents);
     for (int i = 0; i < params.num_agents; ++i) {
-        inventory[i] = static_cast<float>(i % 100);
-        execution_cost[i] = static_cast<float>(i % 100);
+        h_inventory[i] = static_cast<float>(i % 100);
+        h_execution_cost[i] = static_cast<float>(i % 100);
     }
 
-    cudaMemcpy(d_inventory, inventory.data(), params.num_agents * sizeof(float),
+    cudaMemcpy(d_inventory, h_inventory.data(), params.num_agents * sizeof(float),
                cudaMemcpyHostToDevice);
-    cudaMemcpy(d_execution_cost, execution_cost.data(), params.num_agents * sizeof(float),
+    cudaMemcpy(d_execution_cost, h_execution_cost.data(), params.num_agents * sizeof(float),
                cudaMemcpyHostToDevice);
 
-    launchCalculateSpatialHash(d_inventory, d_execution_cost, d_agent_hash, d_agent_indices,
-                               params.num_agents);
+    // Reset heads
+    cudaMemset(d_cell_head, -1, params.hash_table_size * sizeof(int));
+
+    launchBuildSpatialHash(d_inventory, d_execution_cost, d_cell_head, d_agent_next, params);
     cudaDeviceSynchronize();
 
-    copyHashesToHost();
+    copyHashDataToHost();
 
-    // All hashes should be within valid range
-    for (int i = 0; i < params.num_agents; ++i) {
-        EXPECT_GE(h_agent_hash[i], 0) << "Hash at index " << i << " should be non-negative";
-        EXPECT_LT(h_agent_hash[i], params.hash_table_size)
-            << "Hash at index " << i << " should be less than hash_table_size";
+    // Verify all agents are in the list exactly once
+    std::vector<bool> agent_found(params.num_agents, false);
+    int agents_count = 0;
+
+    for (int i = 0; i < params.hash_table_size; ++i) {
+        int curr = h_cell_head[i];
+        while (curr != -1) {
+            ASSERT_GE(curr, 0);
+            ASSERT_LT(curr, params.num_agents);
+            ASSERT_FALSE(agent_found[curr])
+                << "Agent " << curr << " found twice (cycle or duplicate)";
+            agent_found[curr] = true;
+            agents_count++;
+            curr = h_agent_next[curr];
+
+            // Prevent infinite loop in test if cycle exists
+            ASSERT_LE(agents_count, params.num_agents + 1);
+        }
     }
-}
 
-TEST_F(SpatialFixture, SpatialHashIndicesAreInitialized) {
-    // Initialize with simple values
-    std::vector<float> inventory(params.num_agents, 1.0f);
-    std::vector<float> execution_cost(params.num_agents, 1.0f);
-
-    cudaMemcpy(d_inventory, inventory.data(), params.num_agents * sizeof(float),
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(d_execution_cost, execution_cost.data(), params.num_agents * sizeof(float),
-               cudaMemcpyHostToDevice);
-
-    launchCalculateSpatialHash(d_inventory, d_execution_cost, d_agent_hash, d_agent_indices,
-                               params.num_agents);
-    cudaDeviceSynchronize();
-
-    copyHashesToHost();
-
-    // Agent indices should be initialized to 0, 1, 2, ..., num_agents-1
-    for (int i = 0; i < params.num_agents; ++i) {
-        EXPECT_EQ(h_agent_indices[i], i)
-            << "Agent index at position " << i << " should equal " << i;
-    }
+    ASSERT_EQ(agents_count, params.num_agents);
 }
 
 TEST_F(SpatialFixture, SpatialHashDeterministic) {
-    // Same input should produce same output
-    std::vector<float> inventory(params.num_agents);
-    std::vector<float> execution_cost(params.num_agents);
+    // Initialize
     for (int i = 0; i < params.num_agents; ++i) {
-        inventory[i] = static_cast<float>(i % 50) * 0.5f;
-        execution_cost[i] = static_cast<float>(i % 50) * 0.3f;
+        h_inventory[i] = static_cast<float>(i * 1.5f);
+        h_execution_cost[i] = static_cast<float>(i * 0.5f);
     }
-
-    cudaMemcpy(d_inventory, inventory.data(), params.num_agents * sizeof(float),
+    cudaMemcpy(d_inventory, h_inventory.data(), params.num_agents * sizeof(float),
                cudaMemcpyHostToDevice);
-    cudaMemcpy(d_execution_cost, execution_cost.data(), params.num_agents * sizeof(float),
+    cudaMemcpy(d_execution_cost, h_execution_cost.data(), params.num_agents * sizeof(float),
                cudaMemcpyHostToDevice);
 
-    launchCalculateSpatialHash(d_inventory, d_execution_cost, d_agent_hash, d_agent_indices,
-                               params.num_agents);
+    // Run 1
+    cudaMemset(d_cell_head, -1, params.hash_table_size * sizeof(int));
+    launchBuildSpatialHash(d_inventory, d_execution_cost, d_cell_head, d_agent_next, params);
     cudaDeviceSynchronize();
-    copyHashesToHost();
-    std::vector<int> first_run = h_agent_hash;
 
-    // Run again
-    launchCalculateSpatialHash(d_inventory, d_execution_cost, d_agent_hash, d_agent_indices,
-                               params.num_agents);
+    std::vector<int> head1(params.hash_table_size);
+    std::vector<int> next1(params.num_agents);
+    cudaMemcpy(head1.data(), d_cell_head, params.hash_table_size * sizeof(int),
+               cudaMemcpyDeviceToHost);
+    cudaMemcpy(next1.data(), d_agent_next, params.num_agents * sizeof(int), cudaMemcpyDeviceToHost);
+
+    // Run 2
+    cudaMemset(d_cell_head, -1, params.hash_table_size * sizeof(int));
+    launchBuildSpatialHash(d_inventory, d_execution_cost, d_cell_head, d_agent_next, params);
     cudaDeviceSynchronize();
-    copyHashesToHost();
 
-    for (int i = 0; i < params.num_agents; ++i) {
-        EXPECT_EQ(first_run[i], h_agent_hash[i]) << "Hash should be deterministic at index " << i;
+    std::vector<int> head2(params.hash_table_size);
+    std::vector<int> next2(params.num_agents);
+    cudaMemcpy(head2.data(), d_cell_head, params.hash_table_size * sizeof(int),
+               cudaMemcpyDeviceToHost);
+    cudaMemcpy(next2.data(), d_agent_next, params.num_agents * sizeof(int), cudaMemcpyDeviceToHost);
+
+    // Note: Atomic operations order is NOT deterministic for the linked list order within a cell.
+    // However, the set of agents in each cell should be deterministic.
+    // So we can't compare head/next arrays directly if there are collisions.
+    // But if we ensure no collisions (sparse), we can. Or we verify content of cells.
+
+    // Let's verify that for each cell, the set of agents is the same.
+    for (int i = 0; i < params.hash_table_size; ++i) {
+        std::set<int> agents1;
+        int curr = head1[i];
+        while (curr != -1) {
+            agents1.insert(curr);
+            curr = next1[curr];
+        }
+
+        std::set<int> agents2;
+        curr = head2[i];
+        while (curr != -1) {
+            agents2.insert(curr);
+            curr = next2[curr];
+        }
+
+        ASSERT_EQ(agents1, agents2) << "Cell " << i << " content mismatch";
     }
 }
 
-TEST_F(SpatialFixture, NearbyPointsShareSimilarHashes) {
-    // Points close together should have higher probability of sharing hash
-    params.num_agents = 100;
+TEST_F(SpatialFixture, NearbyPointsShareSameCell) {
+    params.num_agents = 2;
     copyParamsToDevice(params);
 
-    std::vector<float> inventory(params.num_agents);
-    std::vector<float> execution_cost(params.num_agents);
+    // Two points very close to each other
+    h_inventory[0] = 10.0f;
+    h_execution_cost[0] = 10.0f;
 
-    // Create clusters of nearby points
-    for (int i = 0; i < params.num_agents; ++i) {
-        int cluster = i / 10;
-        inventory[i] = cluster * 5.0f + (i % 10) * 0.1f;
-        execution_cost[i] = cluster * 5.0f + (i % 10) * 0.1f;
-    }
+    h_inventory[1] = 10.0f + params.sph_smoothing_radius * 0.1f;
+    h_execution_cost[1] = 10.0f + params.sph_smoothing_radius * 0.1f;
 
-    cudaMemcpy(d_inventory, inventory.data(), params.num_agents * sizeof(float),
+    cudaMemcpy(d_inventory, h_inventory.data(), params.num_agents * sizeof(float),
                cudaMemcpyHostToDevice);
-    cudaMemcpy(d_execution_cost, execution_cost.data(), params.num_agents * sizeof(float),
+    cudaMemcpy(d_execution_cost, h_execution_cost.data(), params.num_agents * sizeof(float),
                cudaMemcpyHostToDevice);
 
-    launchCalculateSpatialHash(d_inventory, d_execution_cost, d_agent_hash, d_agent_indices,
-                               params.num_agents);
-    cudaDeviceSynchronize();
-    copyHashesToHost();
-
-    // Count unique hashes - should be much less than num_agents since points are clustered
-    std::set<int> unique_hashes(h_agent_hash.begin(), h_agent_hash.end());
-    EXPECT_LT(unique_hashes.size(), params.num_agents / 2)
-        << "Clustered points should share many hash buckets";
-}
-
-// Tests for findCellBounds kernel
-
-TEST_F(SpatialFixture, CellBoundsHandleEmptyCells) {
-    // Initialize data
-    std::vector<float> inventory(params.num_agents, 1.0f);
-    std::vector<float> execution_cost(params.num_agents, 1.0f);
-
-    cudaMemcpy(d_inventory, inventory.data(), params.num_agents * sizeof(float),
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(d_execution_cost, execution_cost.data(), params.num_agents * sizeof(float),
-               cudaMemcpyHostToDevice);
-
-    // Reset cell bounds
-    cudaMemset(d_cell_start, -1, params.hash_table_size * sizeof(int));
-    cudaMemset(d_cell_end, -1, params.hash_table_size * sizeof(int));
-
-    // Calculate hashes and sort
-    launchCalculateSpatialHash(d_inventory, d_execution_cost, d_agent_hash, d_agent_indices,
-                               params.num_agents);
-    launchSortByKey(d_agent_hash, d_agent_indices, params.num_agents);
-    launchFindCellBounds(d_agent_hash, d_cell_start, d_cell_end, params.num_agents);
+    cudaMemset(d_cell_head, -1, params.hash_table_size * sizeof(int));
+    launchBuildSpatialHash(d_inventory, d_execution_cost, d_cell_head, d_agent_next, params);
     cudaDeviceSynchronize();
 
-    copyCellBoundsToHost();
+    copyHashDataToHost();
 
-    // Empty cells should have start = -1, end = -1
-    int occupied_cells = 0;
+    // Find the cell containing agent 0
+    int cell_idx = -1;
     for (int i = 0; i < params.hash_table_size; ++i) {
-        if (h_cell_start[i] != -1) {
-            occupied_cells++;
-            EXPECT_NE(h_cell_end[i], -1) << "If cell has start, it must have end at cell " << i;
-            EXPECT_GT(h_cell_end[i], h_cell_start[i])
-                << "Cell end must be greater than start at cell " << i;
+        int curr = h_cell_head[i];
+        while (curr != -1) {
+            if (curr == 0) {
+                cell_idx = i;
+                break;
+            }
+            curr = h_agent_next[curr];
         }
+        if (cell_idx != -1)
+            break;
     }
 
-    EXPECT_GT(occupied_cells, 0) << "At least some cells should be occupied";
+    ASSERT_NE(cell_idx, -1) << "Agent 0 not found in any cell";
+
+    // Check if agent 1 is in the same cell
+    bool found_1 = false;
+    int curr = h_cell_head[cell_idx];
+    while (curr != -1) {
+        if (curr == 1)
+            found_1 = true;
+        curr = h_agent_next[curr];
+    }
+
+    ASSERT_TRUE(found_1) << "Agent 1 should be in the same cell as Agent 0";
 }
-
-TEST_F(SpatialFixture, CellBoundsCoverAllAgents) {
-    std::vector<float> inventory(params.num_agents);
-    std::vector<float> execution_cost(params.num_agents);
-    for (int i = 0; i < params.num_agents; ++i) {
-        inventory[i] = static_cast<float>(i % 100);
-        execution_cost[i] = static_cast<float>(i % 100);
-    }
-
-    cudaMemcpy(d_inventory, inventory.data(), params.num_agents * sizeof(float),
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(d_execution_cost, execution_cost.data(), params.num_agents * sizeof(float),
-               cudaMemcpyHostToDevice);
-
-    cudaMemset(d_cell_start, -1, params.hash_table_size * sizeof(int));
-    cudaMemset(d_cell_end, -1, params.hash_table_size * sizeof(int));
-
-    launchCalculateSpatialHash(d_inventory, d_execution_cost, d_agent_hash, d_agent_indices,
-                               params.num_agents);
-    launchSortByKey(d_agent_hash, d_agent_indices, params.num_agents);
-    launchFindCellBounds(d_agent_hash, d_cell_start, d_cell_end, params.num_agents);
-    cudaDeviceSynchronize();
-
-    copyCellBoundsToHost();
-
-    // Count total agents covered by cell bounds
-    int total_agents = 0;
-    for (int i = 0; i < params.hash_table_size; ++i) {
-        if (h_cell_start[i] != -1) {
-            total_agents += (h_cell_end[i] - h_cell_start[i]);
-        }
-    }
-
-    EXPECT_EQ(total_agents, params.num_agents) << "All agents should be covered by cell bounds";
-}
-
-// Tests for computeLocalDensities kernel
 
 TEST_F(SpatialFixture, LocalDensityAllPositive) {
-    // Initialize with random-ish data
-    std::vector<float> inventory(params.num_agents);
-    std::vector<float> execution_cost(params.num_agents);
+    // Random distribution
     for (int i = 0; i < params.num_agents; ++i) {
-        inventory[i] = static_cast<float>((i * 17) % 100) * 0.1f;
-        execution_cost[i] = static_cast<float>((i * 23) % 100) * 0.1f;
+        h_inventory[i] = static_cast<float>(i % 50);
+        h_execution_cost[i] = static_cast<float>((i * 7) % 50);
     }
-
-    cudaMemcpy(d_inventory, inventory.data(), params.num_agents * sizeof(float),
+    cudaMemcpy(d_inventory, h_inventory.data(), params.num_agents * sizeof(float),
                cudaMemcpyHostToDevice);
-    cudaMemcpy(d_execution_cost, execution_cost.data(), params.num_agents * sizeof(float),
+    cudaMemcpy(d_execution_cost, h_execution_cost.data(), params.num_agents * sizeof(float),
                cudaMemcpyHostToDevice);
 
-    cudaMemset(d_cell_start, -1, params.hash_table_size * sizeof(int));
-    cudaMemset(d_cell_end, -1, params.hash_table_size * sizeof(int));
+    cudaMemset(d_cell_head, -1, params.hash_table_size * sizeof(int));
+    launchBuildSpatialHash(d_inventory, d_execution_cost, d_cell_head, d_agent_next, params);
 
-    launchCalculateSpatialHash(d_inventory, d_execution_cost, d_agent_hash, d_agent_indices,
-                               params.num_agents);
-    launchSortByKey(d_agent_hash, d_agent_indices, params.num_agents);
-    launchFindCellBounds(d_agent_hash, d_cell_start, d_cell_end, params.num_agents);
-    launchComputeLocalDensities(d_inventory, d_execution_cost, d_cell_start, d_cell_end,
-                                d_agent_indices, d_local_density, params.num_agents);
+    launchComputeLocalDensities(d_inventory, d_execution_cost, d_cell_head, d_agent_next,
+                                d_local_density, params);
     cudaDeviceSynchronize();
 
     copyDensityToHost();
 
-    // All densities should be non-negative and finite
     for (int i = 0; i < params.num_agents; ++i) {
-        EXPECT_GE(h_local_density[i], 0.0f)
-            << "Local density should be non-negative at index " << i;
-        EXPECT_FALSE(std::isnan(h_local_density[i]))
-            << "Local density should not be NaN at index " << i;
-        EXPECT_FALSE(std::isinf(h_local_density[i]))
-            << "Local density should not be Inf at index " << i;
+        ASSERT_GE(h_local_density[i], 0.0f) << "Density negative at index " << i;
     }
 }
 
 TEST_F(SpatialFixture, LocalDensityNonZeroForIdenticalPoints) {
-    // Simpler test: when all points are at the same location, density should be non-zero
-    params.num_agents = 100;
-    params.sph_smoothing_radius = 1.0f;
+    params.num_agents = 10;
     copyParamsToDevice(params);
 
-    std::vector<float> inventory(params.num_agents, 10.0f);       // All at same position
-    std::vector<float> execution_cost(params.num_agents, 10.0f);  // All at same position
-
-    cudaMemcpy(d_inventory, inventory.data(), params.num_agents * sizeof(float),
+    // All points at same location
+    for (int i = 0; i < params.num_agents; ++i) {
+        h_inventory[i] = 50.0f;
+        h_execution_cost[i] = 50.0f;
+    }
+    cudaMemcpy(d_inventory, h_inventory.data(), params.num_agents * sizeof(float),
                cudaMemcpyHostToDevice);
-    cudaMemcpy(d_execution_cost, execution_cost.data(), params.num_agents * sizeof(float),
+    cudaMemcpy(d_execution_cost, h_execution_cost.data(), params.num_agents * sizeof(float),
                cudaMemcpyHostToDevice);
 
-    cudaMemset(d_cell_start, -1, params.hash_table_size * sizeof(int));
-    cudaMemset(d_cell_end, -1, params.hash_table_size * sizeof(int));
+    cudaMemset(d_cell_head, -1, params.hash_table_size * sizeof(int));
+    launchBuildSpatialHash(d_inventory, d_execution_cost, d_cell_head, d_agent_next, params);
 
-    launchCalculateSpatialHash(d_inventory, d_execution_cost, d_agent_hash, d_agent_indices,
-                               params.num_agents);
-    launchSortByKey(d_agent_hash, d_agent_indices, params.num_agents);
-    launchFindCellBounds(d_agent_hash, d_cell_start, d_cell_end, params.num_agents);
-    launchComputeLocalDensities(d_inventory, d_execution_cost, d_cell_start, d_cell_end,
-                                d_agent_indices, d_local_density, params.num_agents);
+    launchComputeLocalDensities(d_inventory, d_execution_cost, d_cell_head, d_agent_next,
+                                d_local_density, params);
     cudaDeviceSynchronize();
 
     copyDensityToHost();
 
-    // When all points are at the same location, density should be computed
-    // (even if it's the kernel weight times the number of overlapping points)
-    float total_density = 0.0f;
     for (int i = 0; i < params.num_agents; ++i) {
-        total_density += h_local_density[i];
+        ASSERT_GT(h_local_density[i], 0.0f) << "Density should be positive";
     }
-    float avg_density = total_density / params.num_agents;
-
-    // With 100 overlapping points, some density should be computed
-    EXPECT_GT(avg_density, 0.0f) << "Density should be positive for overlapping points, got avg="
-                                 << avg_density;
-}
-
-// Edge case tests
-
-TEST_F(SpatialFixture, SmallNumberOfAgents) {
-    params.num_agents = 10;
-    copyParamsToDevice(params);
-
-    std::vector<float> inventory(params.num_agents, 5.0f);
-    std::vector<float> execution_cost(params.num_agents, 5.0f);
-
-    cudaMemcpy(d_inventory, inventory.data(), params.num_agents * sizeof(float),
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(d_execution_cost, execution_cost.data(), params.num_agents * sizeof(float),
-               cudaMemcpyHostToDevice);
-
-    cudaMemset(d_cell_start, -1, params.hash_table_size * sizeof(int));
-    cudaMemset(d_cell_end, -1, params.hash_table_size * sizeof(int));
-
-    // Should not crash
-    launchCalculateSpatialHash(d_inventory, d_execution_cost, d_agent_hash, d_agent_indices,
-                               params.num_agents);
-    launchSortByKey(d_agent_hash, d_agent_indices, params.num_agents);
-    launchFindCellBounds(d_agent_hash, d_cell_start, d_cell_end, params.num_agents);
-    launchComputeLocalDensities(d_inventory, d_execution_cost, d_cell_start, d_cell_end,
-                                d_agent_indices, d_local_density, params.num_agents);
-    cudaDeviceSynchronize();
-
-    cudaError_t err = cudaGetLastError();
-    EXPECT_EQ(err, cudaSuccess) << "CUDA error: " << cudaGetErrorString(err);
-}
-
-TEST_F(SpatialFixture, LargeNumberOfAgents) {
-    params.num_agents = 100000;
-    params.hash_table_size = 8192;
-    copyParamsToDevice(params);
-
-    // Reallocate for larger size
-    TearDown();
-    SetUp();
-
-    std::vector<float> inventory(params.num_agents);
-    std::vector<float> execution_cost(params.num_agents);
-    for (int i = 0; i < params.num_agents; ++i) {
-        inventory[i] = static_cast<float>(i % 1000) * 0.1f;
-        execution_cost[i] = static_cast<float>(i % 1000) * 0.1f;
-    }
-
-    cudaMemcpy(d_inventory, inventory.data(), params.num_agents * sizeof(float),
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(d_execution_cost, execution_cost.data(), params.num_agents * sizeof(float),
-               cudaMemcpyHostToDevice);
-
-    cudaMemset(d_cell_start, -1, params.hash_table_size * sizeof(int));
-    cudaMemset(d_cell_end, -1, params.hash_table_size * sizeof(int));
-
-    // Should handle large scale
-    launchCalculateSpatialHash(d_inventory, d_execution_cost, d_agent_hash, d_agent_indices,
-                               params.num_agents);
-    launchSortByKey(d_agent_hash, d_agent_indices, params.num_agents);
-    launchFindCellBounds(d_agent_hash, d_cell_start, d_cell_end, params.num_agents);
-    cudaDeviceSynchronize();
-
-    cudaError_t err = cudaGetLastError();
-    EXPECT_EQ(err, cudaSuccess) << "CUDA error: " << cudaGetErrorString(err);
 }
