@@ -1,52 +1,59 @@
 #include <curand_kernel.h>
-#include <thrust/device_ptr.h>
-#include <thrust/execution_policy.h>
-#include <thrust/reduce.h>
-#include <thrust/sort.h>
 
 #include <ctime>
 
 #include "common.cuh"
 #include "types.h"
 
-extern __constant__ MarketParams d_params;
-
-__global__ void calculateSpatialHashKernel(const float* inventory,
-                                           const float* execution_cost,
-                                           int* agent_hash,
-                                           int* agent_indices) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= d_params.num_agents)
-        return;
-
-    // Discretize to Integer Grid Coordinates (can be very large but not negative)
-    int grid_x = (int) (execution_cost[idx] / d_params.sph_smoothing_radius);
-    int grid_y = (int) (inventory[idx] / d_params.sph_smoothing_radius);
-
-    // Compute unbounded spatial hash
-    unsigned int h = ((grid_x * 73856093) ^ (grid_y * 19349663));
-
-    // Wrap to table size
-    agent_hash[idx] = h % d_params.hash_table_size;
-    agent_indices[idx] = idx;
+// Helper for atomic min/max on float
+__device__ float atomicMinFloat(float* address, float val) {
+    int* address_as_int = (int*) address;
+    int old = *address_as_int, assumed;
+    do {
+        assumed = old;
+        old =
+            atomicCAS(address_as_int, assumed, __float_as_int(fminf(val, __int_as_float(assumed))));
+    } while (assumed != old);
+    return __int_as_float(old);
 }
 
-__global__ void findCellBoundsKernel(const int* sorted_hashes, int* cell_start, int* cell_end) {
+__device__ float atomicMaxFloat(float* address, float val) {
+    int* address_as_int = (int*) address;
+    int old = *address_as_int, assumed;
+    do {
+        assumed = old;
+        old =
+            atomicCAS(address_as_int, assumed, __float_as_int(fmaxf(val, __int_as_float(assumed))));
+    } while (assumed != old);
+    return __int_as_float(old);
+}
+
+// Linked List Spatial Hashing Kernels
+__global__ void buildSpatialHashKernel(const float* inventory,
+                                       const float* execution_cost,
+                                       int* cell_head,
+                                       int* agent_next,
+                                       MarketParams params) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= d_params.num_agents)
+    if (idx >= params.num_agents)
         return;
 
-    int hash = sorted_hashes[idx];
+    // Discretize to Integer Grid Coordinates
+    long long grid_x = floor(execution_cost[idx] / params.sph_smoothing_radius);
+    long long grid_y = floor(inventory[idx] / params.sph_smoothing_radius);
 
-    // Handle Start of Cell
-    if (idx == 0 || hash != sorted_hashes[idx - 1]) {
-        cell_start[hash] = idx;
-    }
+    // Compute unbounded spatial hash
+    unsigned int h = ((unsigned int) grid_x * 73856093) ^ ((unsigned int) grid_y * 19349663);
+    int hash = h % params.hash_table_size;
 
-    // Handle End of Cell
-    if (idx == d_params.num_agents - 1 || hash != sorted_hashes[idx + 1]) {
-        cell_end[hash] = idx + 1;  // Exclusive end
-    }
+    // Safety check
+    if (hash < 0 || hash >= params.hash_table_size)
+        return;
+
+    // Insert into linked list
+    // atomicExch returns the old value at the address
+    int old_head = atomicExch(&cell_head[hash], idx);
+    agent_next[idx] = old_head;
 }
 
 __device__ inline float computeInteraction(
@@ -59,119 +66,74 @@ __device__ inline float computeInteraction(
 
 __global__ void computeLocalDensitiesKernel(const float* __restrict__ inventory,
                                             const float* __restrict__ execution_cost,
-                                            const int* __restrict__ cell_start_idx,
-                                            const int* __restrict__ cell_end_idxs,
-                                            const int* __restrict__ agent_indices,
-                                            float* __restrict__ d_local_density) {
+                                            const int* __restrict__ cell_head,
+                                            const int* __restrict__ agent_next,
+                                            float* __restrict__ d_local_density,
+                                            MarketParams params) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= d_params.num_agents)
+    if (idx >= params.num_agents)
         return;
 
     float my_inv = inventory[idx];
     float my_cost = execution_cost[idx];
 
     // Constants
-    float h2 = d_params.sph_smoothing_radius * d_params.sph_smoothing_radius;
-    float poly6 = 315.0f / (64.0f * 3.14159265f * powf(d_params.sph_smoothing_radius, 9));
+    float h2 = params.sph_smoothing_radius * params.sph_smoothing_radius;
+    float poly6 = 315.0f / (64.0f * 3.14159265f * powf(params.sph_smoothing_radius, 9));
     float density_acc = 0.0f;
 
-    int my_grid_x = floor(my_cost / d_params.sph_smoothing_radius);
-    int my_grid_y = floor(my_inv / d_params.sph_smoothing_radius);
+    long long my_grid_x = floor(my_cost / params.sph_smoothing_radius);
+    long long my_grid_y = floor(my_inv / params.sph_smoothing_radius);
 
     // Flattened Neighbor Loop
     for (int n = 0; n < 9; n++) {
-        int neighbor_grid_x = my_grid_x + ((n % 3) - 1);
-        int neighbor_grid_y = my_grid_y + ((n / 3) - 1);
+        long long neighbor_grid_x = my_grid_x + ((n % 3) - 1);
+        long long neighbor_grid_y = my_grid_y + ((n / 3) - 1);
 
-        unsigned int h = ((neighbor_grid_x * 73856093) ^ (neighbor_grid_y * 19349663));
-        unsigned int hash = h % d_params.hash_table_size;
-        int start = cell_start_idx[hash];
-        int end = cell_end_idxs[hash];
+        unsigned int h = ((unsigned int) neighbor_grid_x * 73856093) ^
+                         ((unsigned int) neighbor_grid_y * 19349663);
+        int hash = h % params.hash_table_size;
 
-        for (int j = start; j < end; j++) {
-            float n_inv = inventory[j];
-            float n_cost = execution_cost[j];
-            float neighbor_mass = d_params.mass_alpha + d_params.mass_beta * n_inv;
+        if (hash < 0 || hash >= params.hash_table_size)
+            continue;
+
+        // Traverse Linked List
+        int curr = cell_head[hash];
+        while (curr != -1) {
+            float n_inv = inventory[curr];
+            float n_cost = execution_cost[curr];
+            float neighbor_mass = params.mass_alpha + params.mass_beta * n_inv;
             density_acc +=
                 neighbor_mass * computeInteraction(my_inv, my_cost, n_inv, n_cost, h2, poly6);
+
+            curr = agent_next[curr];
         }
     }
 
-    // Scatter directly to original index
-    int original_idx = agent_indices[idx];
-    d_local_density[original_idx] = density_acc;
+    d_local_density[idx] = density_acc;
 }
 
-void launchCalculateSpatialHash(const float* d_inventory,
-                                const float* d_execution_cost,
-                                int* d_agent_hash,
-                                int* d_agent_indices,
-                                int num_agents) {
+void launchBuildSpatialHash(const float* d_inventory,
+                            const float* d_execution_cost,
+                            int* d_cell_head,
+                            int* d_agent_next,
+                            MarketParams params) {
     int blockSize = 256;
-    int numBlocks = (num_agents + blockSize - 1) / blockSize;
-
-    calculateSpatialHashKernel<<<numBlocks, blockSize>>>(d_inventory, d_execution_cost,
-                                                         d_agent_hash, d_agent_indices);
-    // No sync here - letting caller control synchronization for better performance
-}
-
-void launchFindCellBounds(const int* d_sorted_hashes,
-                          int* d_cell_start,
-                          int* d_cell_end,
-                          int num_agents) {
-    int blockSize = 256;
-    int numBlocks = (num_agents + blockSize - 1) / blockSize;
-
-    findCellBoundsKernel<<<numBlocks, blockSize>>>(d_sorted_hashes, d_cell_start, d_cell_end);
-    // No sync here - letting caller control synchronization for better performance
-}
-
-void launchSortByKey(int* d_keys, int* d_values, int num_agents) {
-    thrust::device_ptr<int> t_keys(d_keys);
-    thrust::device_ptr<int> t_values(d_values);
-    thrust::sort_by_key(t_keys, t_keys + num_agents, t_values);
-}
-
-__global__ void reorderDataKernel(const int* __restrict__ sorted_indices,
-                                  const float* __restrict__ in1,
-                                  float* __restrict__ out1,
-                                  const float* __restrict__ in2,
-                                  float* __restrict__ out2,
-                                  int num_agents) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= num_agents)
-        return;
-
-    int sorted_idx = sorted_indices[idx];
-    out1[idx] = in1[sorted_idx];
-    out2[idx] = in2[sorted_idx];
-}
-
-void launchReorderData(const int* sorted_indices,
-                       int num_agents,
-                       const float* in1,
-                       float* out1,
-                       const float* in2,
-                       float* out2) {
-    int blockSize = 256;
-    int numBlocks = (num_agents + blockSize - 1) / blockSize;
-
-    reorderDataKernel<<<numBlocks, blockSize>>>(sorted_indices, in1, out1, in2, out2, num_agents);
+    int numBlocks = (params.num_agents + blockSize - 1) / blockSize;
+    buildSpatialHashKernel<<<numBlocks, blockSize>>>(d_inventory, d_execution_cost, d_cell_head,
+                                                     d_agent_next, params);
 }
 
 void launchComputeLocalDensities(const float* d_inventory,
                                  const float* d_execution_cost,
-                                 const int* d_cell_start,
-                                 const int* d_cell_end,
-                                 const int* d_agent_indices,
+                                 const int* d_cell_head,
+                                 const int* d_agent_next,
                                  float* d_local_density,
-                                 int num_agents) {
+                                 MarketParams params) {
     int blockSize = 256;
-    int numBlocks = (num_agents + blockSize - 1) / blockSize;
-
+    int numBlocks = (params.num_agents + blockSize - 1) / blockSize;
     computeLocalDensitiesKernel<<<numBlocks, blockSize>>>(
-        d_inventory, d_execution_cost, d_cell_start, d_cell_end, d_agent_indices, d_local_density);
-    // No sync here - letting caller control synchronization for better performance
+        d_inventory, d_execution_cost, d_cell_head, d_agent_next, d_local_density, params);
 }
 
 __global__ void computeSpeedTermsKernel(const float* __restrict__ risk_aversion,
@@ -179,20 +141,20 @@ __global__ void computeSpeedTermsKernel(const float* __restrict__ risk_aversion,
                                         const float* __restrict__ inventory,
                                         float* __restrict__ speed_term_1,
                                         float* __restrict__ speed_term_2,
-                                        int dt) {
+                                        int dt,
+                                        MarketParams params) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= d_params.num_agents)
+    if (idx >= params.num_agents)
         return;
 
-    float personal_decay_rate = sqrtf(risk_aversion[idx] / d_params.temporary_impact);
+    float personal_decay_rate = sqrtf(risk_aversion[idx] / params.temporary_impact);
     float local_temporary_impact =
-        d_params.temporary_impact * (1 + d_params.congestion_sensitivity * local_density[idx]);
-    speed_term_1[idx] = d_params.permanent_impact *
-                        (1 - expf(-personal_decay_rate * (d_params.num_steps - dt))) /
+        params.temporary_impact * (1 + params.congestion_sensitivity * local_density[idx]);
+    speed_term_1[idx] = params.permanent_impact *
+                        (1 - expf(-personal_decay_rate * (params.num_steps - dt))) /
                         (2 * local_temporary_impact * personal_decay_rate);
-    speed_term_2[idx] =
-        (2 * sqrtf(d_params.temporary_impact * risk_aversion[idx]) * inventory[idx]) /
-        (2 * local_temporary_impact);
+    speed_term_2[idx] = (2 * sqrtf(params.temporary_impact * risk_aversion[idx]) * inventory[idx]) /
+                        (2 * local_temporary_impact);
 }
 
 __global__ void updateAgentStateKernel(const float* __restrict__ speed_term_1,
@@ -204,24 +166,24 @@ __global__ void updateAgentStateKernel(const float* __restrict__ speed_term_1,
                                        float* __restrict__ inventory,
                                        float* __restrict__ execution_cost,
                                        float* __restrict__ cash,
-                                       float price) {
+                                       float price,
+                                       MarketParams params) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= d_params.num_agents)
+    if (idx >= params.num_agents)
         return;
 
     float local_temporary_impact =
-        d_params.temporary_impact * (1 + d_params.congestion_sensitivity * local_density[idx]);
+        params.temporary_impact * (1 + params.congestion_sensitivity * local_density[idx]);
     speed[idx] = pressure * speed_term_1[idx] - speed_term_2[idx];
 
-    float new_inv = inventory[idx] + speed[idx] * d_params.time_delta;
+    float new_inv = inventory[idx] + speed[idx] * params.time_delta;
     // Clamp new inventory to 0 if it goes negative
     new_inv = fmaxf(new_inv, 0.0f);
     inventory[idx] = new_inv;
     float new_execution_cost = -local_temporary_impact * speed[idx];
     execution_cost[idx] = new_execution_cost;
 
-    cash[idx] +=
-        -speed[idx] * (price + d_params.temporary_impact * speed[idx]) * d_params.time_delta;
+    cash[idx] += -speed[idx] * (price + params.temporary_impact * speed[idx]) * params.time_delta;
 }
 
 void launchComputeSpeedTerms(const float* d_risk_aversion,
@@ -230,12 +192,12 @@ void launchComputeSpeedTerms(const float* d_risk_aversion,
                              float* d_speed_term_1,
                              float* d_speed_term_2,
                              int dt,
-                             int num_agents) {
+                             MarketParams params) {
     int blockSize = 256;
-    int numBlocks = (num_agents + blockSize - 1) / blockSize;
+    int numBlocks = (params.num_agents + blockSize - 1) / blockSize;
 
     computeSpeedTermsKernel<<<numBlocks, blockSize>>>(d_risk_aversion, d_local_density, d_inventory,
-                                                      d_speed_term_1, d_speed_term_2, dt);
+                                                      d_speed_term_1, d_speed_term_2, dt, params);
 }
 
 void launchUpdateAgentState(const float* d_speed_term_1,
@@ -248,27 +210,133 @@ void launchUpdateAgentState(const float* d_speed_term_1,
                             float* d_execution_cost,
                             float* d_cash,
                             float price,
-                            int num_agents) {
+                            MarketParams params) {
     int blockSize = 256;
-    int numBlocks = (num_agents + blockSize - 1) / blockSize;
+    int numBlocks = (params.num_agents + blockSize - 1) / blockSize;
 
     updateAgentStateKernel<<<numBlocks, blockSize>>>(
         d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices, pressure, d_speed,
-        d_inventory, d_execution_cost, d_cash, price);
+        d_inventory, d_execution_cost, d_cash, price, params);
+}
+
+// Reduction Kernels
+__global__ void reducePressureKernel(const float* s1, const float* s2, float* output, int n) {
+    extern __shared__ float sdata[];
+    unsigned int tid = threadIdx.x;
+    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    float my_s1 = (i < n) ? s1[i] : 0.0f;
+    float my_s2 = (i < n) ? s2[i] : 0.0f;
+
+    // Block reduction
+    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+        // Shuffle down is faster but shared memory is portable
+        // Using shared memory for simplicity
+        sdata[tid] = my_s1;
+        sdata[tid + blockDim.x] = my_s2;
+        __syncthreads();
+        if (tid < s) {
+            my_s1 += sdata[tid + s];
+            my_s2 += sdata[tid + blockDim.x + s];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        atomicAdd(&output[0], my_s1);
+        atomicAdd(&output[1], my_s2);
+    }
+}
+
+// Simple global atomic reduction for now (performance is fine for 100k)
+__global__ void reducePressureAtomicKernel(const float* s1, const float* s2, float* output, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        atomicAdd(&output[0], s1[i]);
+        atomicAdd(&output[1], s2[i]);
+    }
 }
 
 void launchComputePressure(const float* d_speed_term_1,
                            const float* d_speed_term_2,
-                           float* pressure,  // CPU Pointer
+                           float* d_pressure_buffer,
+                           float* pressure,
                            int num_agents) {
-    // Consume any previous error to prevent thrust::reduce from crashing
-    cudaGetLastError();
+    // Reset buffer
+    cudaMemset(d_pressure_buffer, 0, 2 * sizeof(float));
 
-    thrust::device_ptr<const float> t_1(d_speed_term_1);
-    thrust::device_ptr<const float> t_2(d_speed_term_2);
+    int blockSize = 256;
+    int numBlocks = (num_agents + blockSize - 1) / blockSize;
 
-    float s1 = thrust::reduce(thrust::device, t_1, t_1 + num_agents, 0.0f);
-    float s2 = thrust::reduce(thrust::device, t_2, t_2 + num_agents, 0.0f);
+    // Use atomic reduction for simplicity and correctness
+    reducePressureAtomicKernel<<<numBlocks, blockSize>>>(d_speed_term_1, d_speed_term_2,
+                                                         d_pressure_buffer, num_agents);
 
-    *pressure = -s2 / (1.0f - s1);
+    // Copy back result
+    float h_buffer[2];
+    cudaMemcpy(h_buffer, d_pressure_buffer, 2 * sizeof(float), cudaMemcpyDeviceToHost);
+
+    *pressure = -h_buffer[1] / (1.0f - h_buffer[0]);
+}
+
+__global__ void reduceBoundariesAtomicKernel(
+    const float* x, const float* y, const float* c, float* output, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        float val_x = x[i];
+        float val_y = y[i];
+        float val_c = c[i];
+
+        atomicMinFloat(&output[0], val_y);
+        atomicMaxFloat(&output[1], val_y);
+        atomicMinFloat(&output[2], val_x);
+        atomicMaxFloat(&output[3], val_x);
+        atomicAdd(&output[4], val_c);
+    }
+}
+
+__global__ void reduceBoundariesSqSumAtomicKernel(const float* c,
+                                                  float* output,
+                                                  float mean,
+                                                  int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        float diff = c[i] - mean;
+        atomicAdd(&output[5], diff * diff);
+    }
+}
+
+Boundaries launchComputeBoundaries(
+    const float* d_x, const float* d_y, const float* d_c, float* d_buffer, int num_agents) {
+    // Initialize buffer: [min_y, max_y, min_x, max_x, sum_c, sq_sum_c]
+    float init_vals[6] = {1e30f, -1e30f, 1e30f, -1e30f, 0.0f, 0.0f};
+    cudaMemcpy(d_buffer, init_vals, 6 * sizeof(float), cudaMemcpyHostToDevice);
+
+    int blockSize = 256;
+    int numBlocks = (num_agents + blockSize - 1) / blockSize;
+
+    reduceBoundariesAtomicKernel<<<numBlocks, blockSize>>>(d_x, d_y, d_c, d_buffer, num_agents);
+
+    float h_buffer[6];
+    cudaMemcpy(h_buffer, d_buffer, 6 * sizeof(float), cudaMemcpyDeviceToHost);
+
+    float min_y = h_buffer[0];
+    float max_y = h_buffer[1];
+    float min_x = h_buffer[2];
+    float max_x = h_buffer[3];
+    float mean_c = h_buffer[4] / num_agents;
+
+    // Second pass for stddev
+    cudaMemset(&d_buffer[5], 0, sizeof(float));
+    reduceBoundariesSqSumAtomicKernel<<<numBlocks, blockSize>>>(d_c, d_buffer, mean_c, num_agents);
+
+    float sq_sum_c;
+    cudaMemcpy(&sq_sum_c, &d_buffer[5], sizeof(float), cudaMemcpyDeviceToHost);
+
+    float stddev_c = sqrtf(sq_sum_c / num_agents);
+    float limit = fmaxf(fabsf(mean_c - 2.0f * stddev_c), fabsf(mean_c + 2.0f * stddev_c));
+    if (limit < 0.001f)
+        limit = 1.0f;
+
+    return {min_y, max_y, min_x, max_x, -limit, limit};
 }

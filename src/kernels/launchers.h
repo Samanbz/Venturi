@@ -15,37 +15,26 @@ extern void launchInitializeNormal(
 extern void launchInitializeLogNormal(
     float* d_data, float mean, float stddev, curandState* d_rngStates, int num_agents);
 
-extern void launchCalculateSpatialHash(const float* d_inventory,
-                                       const float* d_execution_cost,
-                                       int* d_agent_hash,
-                                       int* d_agent_indices,
-                                       int num_agents);
-extern void launchFindCellBounds(const int* d_sorted_hashes,
-                                 int* d_cell_start,
-                                 int* d_cell_end,
-                                 int num_agents);
-
-extern void launchSortByKey(int* d_keys, int* d_values, int num_agents);
-
-void launchReorderData(const int* sorted_indices,
-                       int num_agents,
-                       const float* in1,
-                       float* out1,
-                       const float* in2 = nullptr,
-                       float* out2 = nullptr);
+extern void launchBuildSpatialHash(const float* d_inventory,
+                                   const float* d_execution_cost,
+                                   int* d_cell_head,
+                                   int* d_agent_next,
+                                   MarketParams params);
 
 extern void launchComputeLocalDensities(const float* d_inventory,
                                         const float* d_execution_cost,
-                                        const int* d_cell_start_idx,
-                                        const int* d_cell_end_idxs,
-                                        const int* d_agent_indices,
+                                        const int* d_cell_head,
+                                        const int* d_agent_next,
                                         float* d_local_density,
-                                        int num_agents);
+                                        MarketParams params);
 
-extern void launchComputePressure(const float* d_speed_term_1,
-                                  const float* d_speed_term_2,
-                                  float* pressure,
-                                  int num_agents);
+extern void launchComputeSpeedTerms(const float* d_risk_aversion,
+                                    const float* d_local_density,
+                                    const float* d_inventory,
+                                    float* d_speed_term_1,
+                                    float* d_speed_term_2,
+                                    int dt,
+                                    MarketParams params);
 
 extern void launchUpdateAgentState(const float* d_speed_term_1,
                                    const float* d_speed_term_2,
@@ -57,12 +46,13 @@ extern void launchUpdateAgentState(const float* d_speed_term_1,
                                    float* d_execution_cost,
                                    float* d_cash,
                                    float price,
-                                   int num_agents);
+                                   MarketParams params);
 
-extern void launchComputeSpeedTerms(const float* d_risk_aversion,
-                                    const float* d_local_density,
-                                    const float* d_inventory,
-                                    float* d_speed_term_1,
-                                    float* d_speed_term_2,
-                                    int dt,
-                                    int num_agents);
+extern void launchComputePressure(const float* d_speed_term_1,
+                                  const float* d_speed_term_2,
+                                  float* d_pressure_buffer,
+                                  float* pressure,
+                                  int num_agents);
+
+extern Boundaries launchComputeBoundaries(
+    const float* d_x, const float* d_y, const float* d_c, float* d_buffer, int num_agents);

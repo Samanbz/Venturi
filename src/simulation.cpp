@@ -15,14 +15,20 @@
 #include "kernels/common.cuh"
 #include "kernels/launchers.h"
 
-Simulation::Simulation(
-    const MarketParams& params, float* vk_X, float* vk_Y, PlotVar xVar, PlotVar yVar)
+Simulation::Simulation(const MarketParams& params,
+                       float* vk_X,
+                       float* vk_Y,
+                       float* vk_Color,
+                       PlotVar xVar,
+                       PlotVar yVar,
+                       PlotVar colorVar)
     : params_(params), rng(std::random_device{}()), normal_dist(0.0f, 1.0f) {
-    if (vk_X == nullptr ^ vk_Y == nullptr) {
-        throw std::invalid_argument("Both vk_X and vk_Y must be provided or both must be nullptr");
+    if ((vk_X != nullptr) != (vk_Y != nullptr) || (vk_X != nullptr) != (vk_Color != nullptr)) {
+        throw std::invalid_argument(
+            "All of vk_X, vk_Y, and vk_Color must be provided or all must be nullptr");
     }
 
-    externalMemoryProvided = (vk_X != nullptr && vk_Y != nullptr);
+    externalMemoryProvided = (vk_X != nullptr && vk_Y != nullptr && vk_Color != nullptr);
 
     // Copy MarketParams to device constant memory
     copyParamsToDevice(params_);
@@ -62,6 +68,9 @@ Simulation::Simulation(
 
         getPtrRef(yVar) = vk_Y;
         d_plot_y = vk_Y;
+
+        getPtrRef(colorVar) = vk_Color;
+        d_plot_color = vk_Color;
     }
 
     // Allocate the rest
@@ -77,17 +86,16 @@ Simulation::Simulation(
     }
 
     // Allocate sorted arrays and intermediate buffers
-    cudaMalloc(&state_.d_inventory_sorted, size);
-    cudaMalloc(&state_.d_execution_cost_sorted, size);
     cudaMalloc(&state_.d_speed_term_1, size);
     cudaMalloc(&state_.d_speed_term_2, size);
 
     cudaMalloc(&state_.d_rngStates, params.num_agents * sizeof(curandState));
 
-    cudaMalloc(&state_.d_cell_start, params.hash_table_size * sizeof(int));
-    cudaMalloc(&state_.d_cell_end, params.hash_table_size * sizeof(int));
-    cudaMalloc(&state_.d_agent_hash, params.num_agents * sizeof(int));
-    cudaMalloc(&state_.d_agent_index, params.num_agents * sizeof(int));
+    cudaMalloc(&state_.d_cell_head, params.hash_table_size * sizeof(int));
+    cudaMalloc(&state_.d_agent_next, params.num_agents * sizeof(int));
+
+    cudaMalloc(&state_.d_boundaries_buffer, 6 * sizeof(float));
+    cudaMalloc(&state_.d_pressure_buffer, 2 * sizeof(float));
 
     // Initialize RNG states once with time-based seed
     unsigned long long seed = static_cast<unsigned long long>(time(nullptr));
@@ -117,43 +125,13 @@ Simulation::Simulation(
         cudaMemset(state_.d_execution_cost, 0, size);
 }
 
-BoundaryPair Simulation::getBoundaries() const {
-    // TODO: Optimize by using thrust or device reduction
+Boundaries Simulation::getBoundaries() const {
+    const float* ptr_x = d_plot_x ? d_plot_x : state_.d_execution_cost;
+    const float* ptr_y = d_plot_y ? d_plot_y : state_.d_inventory;
+    const float* ptr_c = d_plot_color ? d_plot_color : state_.d_speed;
 
-    float min_y, max_y;
-    float min_x, max_x;
-
-    // Copy inventories and execution costs back to host for boundary calculation
-    std::vector<float> h_y(params_.num_agents);
-    std::vector<float> h_x(params_.num_agents);
-
-    if (d_plot_y) {
-        cudaMemcpy(h_y.data(), d_plot_y, params_.num_agents * sizeof(float),
-                   cudaMemcpyDeviceToHost);
-    } else {
-        // Fallback if not set (e.g. unit tests)
-        cudaMemcpy(h_y.data(), state_.d_inventory, params_.num_agents * sizeof(float),
-                   cudaMemcpyDeviceToHost);
-    }
-
-    if (d_plot_x) {
-        cudaMemcpy(h_x.data(), d_plot_x, params_.num_agents * sizeof(float),
-                   cudaMemcpyDeviceToHost);
-    } else {
-        // Fallback
-        cudaMemcpy(h_x.data(), state_.d_execution_cost, params_.num_agents * sizeof(float),
-                   cudaMemcpyDeviceToHost);
-    }
-
-    auto [y_min_it, y_max_it] = std::minmax_element(h_y.begin(), h_y.end());
-    auto [x_min_it, x_max_it] = std::minmax_element(h_x.begin(), h_x.end());
-
-    min_y = *y_min_it;
-    max_y = *y_max_it;
-    min_x = *x_min_it;
-    max_x = *x_max_it;
-
-    return {{min_y, max_y}, {min_x, max_x}};
+    return launchComputeBoundaries(ptr_x, ptr_y, ptr_c, state_.d_boundaries_buffer,
+                                   params_.num_agents);
 }
 
 void Simulation::importSemaphores(int fdWait, int fdSignal) {
@@ -176,46 +154,33 @@ void Simulation::importSemaphores(int fdWait, int fdSignal) {
 
 void Simulation::computeLocalDensities() {
     // Reset cell bounds for spatial hashing. Critical step, since many cells may be empty.
-    cudaMemset(state_.d_cell_start, -1, params_.hash_table_size * sizeof(int));
-    cudaMemset(state_.d_cell_end, -1, params_.hash_table_size * sizeof(int));
-    // Compute spatial hashes for all agents based on their current inventories and execution costs
-    launchCalculateSpatialHash(state_.d_inventory, state_.d_execution_cost, state_.d_agent_hash,
-                               state_.d_agent_index, params_.num_agents);
+    // Initialize cell heads to -1
+    cudaMemset(state_.d_cell_head, -1, params_.hash_table_size * sizeof(int));
 
-    // Sort agents by spatial hash
-    launchSortByKey(state_.d_agent_hash, state_.d_agent_index, params_.num_agents);
+    // Build Linked List Spatial Hash
+    launchBuildSpatialHash(state_.d_inventory, state_.d_execution_cost, state_.d_cell_head,
+                           state_.d_agent_next, params_);
 
-    // Identify the start and end indices of agents within each spatial grid cell
-    launchFindCellBounds(state_.d_agent_hash, state_.d_cell_start, state_.d_cell_end,
-                         params_.num_agents);
-
-    launchReorderData(state_.d_agent_index, params_.num_agents, state_.d_inventory,
-                      state_.d_inventory_sorted, state_.d_execution_cost,
-                      state_.d_execution_cost_sorted);
-
-    // Compute local densities for each agent using SPH within their spatial cells
-    launchComputeLocalDensities(state_.d_inventory_sorted, state_.d_execution_cost_sorted,
-                                state_.d_cell_start, state_.d_cell_end, state_.d_agent_index,
-                                state_.d_local_density, params_.num_agents);
+    // Compute local densities using linked list traversal
+    launchComputeLocalDensities(state_.d_inventory, state_.d_execution_cost, state_.d_cell_head,
+                                state_.d_agent_next, state_.d_local_density, params_);
 }
 
 void Simulation::computePressure() {
     launchComputeSpeedTerms(state_.d_risk_aversion, state_.d_local_density, state_.d_inventory,
-                            state_.d_speed_term_1, state_.d_speed_term_2, state_.dt,
-                            params_.num_agents);
+                            state_.d_speed_term_1, state_.d_speed_term_2, state_.dt, params_);
 
     // Compute the pressure based on the speed terms
-    launchComputePressure(state_.d_speed_term_1, state_.d_speed_term_2, &state_.pressure,
-                          params_.num_agents);
+    launchComputePressure(state_.d_speed_term_1, state_.d_speed_term_2, state_.d_pressure_buffer,
+                          &state_.pressure, params_.num_agents);
 }
 
 void Simulation::updateAgentState() {
     // Compute the trading speed for each agent based on their risk aversion, local density, and
     // pressure
     launchUpdateAgentState(state_.d_speed_term_1, state_.d_speed_term_2, state_.d_local_density,
-                           state_.d_agent_index, state_.pressure, state_.d_speed,
-                           state_.d_inventory, state_.d_execution_cost, state_.d_cash, state_.price,
-                           params_.num_agents);
+                           state_.d_agent_next, state_.pressure, state_.d_speed, state_.d_inventory,
+                           state_.d_execution_cost, state_.d_cash, state_.price, params_);
 }
 
 void Simulation::updatePrice() {
@@ -224,9 +189,9 @@ void Simulation::updatePrice() {
         params_.price_randomness_stddev * this->normal_dist(rng) * sqrt(params_.time_delta);
 }
 
-void Simulation::step() {
+void Simulation::step(bool waitForRender, bool signalRender) {
     // Skip wait on first step to avoid deadlock
-    if (state_.dt > 0 && cudaWaitSemaphore != nullptr) {
+    if (waitForRender && state_.dt > 0 && cudaWaitSemaphore != nullptr) {
         cudaExternalSemaphoreWaitParams waitParams{};  // Defaults are fine for binary semaphores
         cudaWaitExternalSemaphoresAsync(&cudaWaitSemaphore, &waitParams, 1,
                                         0);  // 0 = Default Stream
@@ -238,7 +203,7 @@ void Simulation::step() {
     updateAgentState();
     updatePrice();
 
-    if (cudaSignalSemaphore != nullptr) {
+    if (signalRender && cudaSignalSemaphore != nullptr) {
         cudaExternalSemaphoreSignalParams signalParams{};
         cudaSignalExternalSemaphoresAsync(&cudaSignalSemaphore, &signalParams, 1, 0);
     }
@@ -252,28 +217,28 @@ void Simulation::run() {
 
 Simulation::~Simulation() {
     // Free device memory
-    if (externalMemoryProvided) {
-        // If external memory was provided, do not free those pointers
-        state_.d_inventory = nullptr;
-        state_.d_execution_cost = nullptr;
-    } else {
-        cudaFree(state_.d_inventory);
-        cudaFree(state_.d_execution_cost);
-    }
+    auto safeFree = [&](float*& ptr) {
+        if (ptr != nullptr && ptr != d_plot_x && ptr != d_plot_y && ptr != d_plot_color) {
+            cudaFree(ptr);
+        }
+        ptr = nullptr;
+    };
 
-    cudaFree(state_.d_cash);
-    cudaFree(state_.d_speed);
-    cudaFree(state_.d_local_density);
-    cudaFree(state_.d_risk_aversion);
+    safeFree(state_.d_inventory);
+    safeFree(state_.d_execution_cost);
+    safeFree(state_.d_cash);
+    safeFree(state_.d_speed);
+    safeFree(state_.d_local_density);
+    safeFree(state_.d_risk_aversion);
+
     cudaFree(state_.d_rngStates);
 
-    cudaFree(state_.d_inventory_sorted);
-    cudaFree(state_.d_execution_cost_sorted);
     cudaFree(state_.d_speed_term_1);
     cudaFree(state_.d_speed_term_2);
 
-    cudaFree(state_.d_cell_start);
-    cudaFree(state_.d_cell_end);
-    cudaFree(state_.d_agent_hash);
-    cudaFree(state_.d_agent_index);
+    cudaFree(state_.d_cell_head);
+    cudaFree(state_.d_agent_next);
+
+    cudaFree(state_.d_boundaries_buffer);
+    cudaFree(state_.d_pressure_buffer);
 }

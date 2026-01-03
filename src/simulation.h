@@ -10,14 +10,16 @@ class Simulation {
     Simulation(const MarketParams& params,
                float* vk_X = nullptr,
                float* vk_Y = nullptr,
+               float* vk_Color = nullptr,
                PlotVar xVar = PlotVar::ExecutionCost,
-               PlotVar yVar = PlotVar::Inventory);
+               PlotVar yVar = PlotVar::Inventory,
+               PlotVar colorVar = PlotVar::Speed);
     ~Simulation();
 
-    void step();
+    void step(bool waitForRender = true, bool signalRender = true);
     void run();
 
-    BoundaryPair getBoundaries() const;
+    Boundaries getBoundaries() const;
 
     void importSemaphores(int fdWait, int fdSignal);
 
@@ -44,4 +46,5 @@ class Simulation {
 
     float* d_plot_x = nullptr;
     float* d_plot_y = nullptr;
+    float* d_plot_color = nullptr;
 };

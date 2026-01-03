@@ -7,25 +7,26 @@ struct MarketState {
     float price;     // S_t, current asset price
     float pressure;  // mu_t, current market pressure
 
-    float* d_inventory;       // Q_t^a, agent inventories
-    float* d_cash;            // X_t^a, agent cash balances
-    float* d_execution_cost;  // \delta_t^a, agent execution costs
-    float* d_risk_aversion;   // phi^a, agent risk aversion parameters
-    float* d_local_density;   // rho_t^a, agent local densities
+    float* d_inventory = nullptr;       // Q_t^a, agent inventories
+    float* d_cash = nullptr;            // X_t^a, agent cash balances
+    float* d_execution_cost = nullptr;  // \delta_t^a, agent execution costs
+    float* d_risk_aversion = nullptr;   // phi^a, agent risk aversion parameters
+    float* d_local_density = nullptr;   // rho_t^a, agent local densities
 
-    float* d_speed_term_1;
-    float* d_speed_term_2;
-    float* d_speed;  // nu_t^a, agent trading speeds
+    float* d_speed_term_1 = nullptr;
+    float* d_speed_term_2 = nullptr;
+    float* d_speed = nullptr;  // nu_t^a, agent trading speeds
 
-    float* d_inventory_sorted;       // Q_t^a, agent inventories
-    float* d_execution_cost_sorted;  // \delta_t^a, agent execution costs
+    int* d_cell_head =
+        nullptr;  // Spatial grid cell start indices (Used as d_cell_head for Linked List)
+    int* d_agent_next =
+        nullptr;  // Agent indices sorted by cell (Used as d_agent_next for Linked List)
 
-    int* d_cell_start;   // Spatial grid cell start indices
-    int* d_cell_end;     // Spatial grid cell end indices
-    int* d_agent_hash;   // Agent's cell indices
-    int* d_agent_index;  // Agent indices sorted by cell
+    curandState* d_rngStates = nullptr;  // RNG states for each agent (persistent)
 
-    curandState* d_rngStates;  // RNG states for each agent (persistent)
+    // Scratch buffers for reductions
+    float* d_boundaries_buffer = nullptr;  // [min_y, max_y, min_x, max_x, sum_c, sq_sum_c]
+    float* d_pressure_buffer = nullptr;    // [sum_s1, sum_s2]
 };
 
 struct MarketParams {
@@ -49,4 +50,8 @@ struct MarketParams {
     float risk_stddev;  // standard deviation for risk aversion initialization
 };
 
-using BoundaryPair = std::pair<std::pair<float, float>, std::pair<float, float>>;
+struct Boundaries {
+    float minY, maxY;
+    float minX, maxX;
+    float minColor, maxColor;
+};
