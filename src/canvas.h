@@ -11,6 +11,7 @@
 
 #include <array>
 #include <optional>
+#include <tuple>
 #include <vector>
 
 #include "simulation.h"
@@ -40,9 +41,10 @@ class Canvas {
     /**
      * @brief Get CUDA device pointers mapped to the Vulkan vertex buffers
      *
-     * @return std::pair<float*, float*> The CUDA device pointers for the X and Y vertex buffers
+     * @return std::tuple<float*, float*, float*> The CUDA device pointers for the X, Y, and Color
+     * vertex buffers
      */
-    std::pair<float*, float*> getCudaDevicePointers();
+    std::tuple<float*, float*, float*> getCudaDevicePointers();
 
     /**
      * @brief Export the semaphores for synchronization with CUDA
@@ -59,7 +61,7 @@ class Canvas {
      * @param padY Padding to apply to the Y axis boundaries (in percent of range)
      * @param immediate Whether to set the boundaries immediately or interpolate to them
      */
-    void setBoundaries(BoundaryPair boundaries,
+    void setBoundaries(Boundaries boundaries,
                        float padX = 0.1f,
                        float padY = 0.1f,
                        bool immediate = false);
@@ -249,9 +251,13 @@ class Canvas {
     void initVulkan();
 
     /**
-     * @brief The main rendering loop
+     * @brief Run the main application loop
+     *
+     * @param sim The simulation instance
+     * @param targetFPS The target frames per second (0 for unlimited)
+     * @param stepsPerFrame Number of simulation steps to run per rendered frame
      */
-    void mainLoop(Simulation& sim);
+    void mainLoop(Simulation& sim, int targetFPS = 60, int stepsPerFrame = 1);
 
     /**
      * @brief Draw a single frame
@@ -279,6 +285,10 @@ class Canvas {
     float targetMaxX = 1.0f;
     float targetMinY = 0.0f;
     float targetMaxY = 1.0f;
+    float minColor = 0.0f;
+    float maxColor = 1.0f;
+    float targetMinColor = 0.0f;
+    float targetMaxColor = 1.0f;
 
     GLFWwindow* window_;
     VkInstance instance_;
@@ -293,8 +303,10 @@ class Canvas {
     size_t numVertices;
     VkBuffer xBuffer;
     VkBuffer yBuffer;
+    VkBuffer colorBuffer;
     VkDeviceMemory xBufferMemory;
     VkDeviceMemory yBufferMemory;
+    VkDeviceMemory colorBufferMemory;
 
     VkSwapchainKHR swapChain_;
     std::vector<VkImage> swapChainImages;

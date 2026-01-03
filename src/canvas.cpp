@@ -1,12 +1,15 @@
 #include "canvas.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <iostream>
 #include <limits>
 #include <set>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 
 #include "utils.h"
@@ -23,19 +26,21 @@ void Canvas::initWindow() {
     window_ = glfwCreateWindow(WIDTH, HEIGHT, "Venturi Simulation", nullptr, nullptr);
 }
 
-std::pair<float*, float*> Canvas::getCudaDevicePointers() {
+std::tuple<float*, float*, float*> Canvas::getCudaDevicePointers() {
     VkDeviceSize bufferSize = numVertices * sizeof(float);
 
     // Get FDs
     int fdX = getMemoryFd(xBufferMemory);
     int fdY = getMemoryFd(yBufferMemory);
+    int fdColor = getMemoryFd(colorBufferMemory);
 
     // Map to CUDA Device Pointers
     // Note: CUDA takes ownership of the FDs once imported.
     float* ptrX = mapFDToCudaPointer(fdX, bufferSize);
     float* ptrY = mapFDToCudaPointer(fdY, bufferSize);
+    float* ptrColor = mapFDToCudaPointer(fdColor, bufferSize);
 
-    return {ptrX, ptrY};
+    return {ptrX, ptrY, ptrColor};
 }
 
 std::pair<int, int> Canvas::exportSemaphores() {
@@ -45,20 +50,27 @@ std::pair<int, int> Canvas::exportSemaphores() {
     return {fdVulkanFinished, fdCudaFinished};
 }
 
-void Canvas::setBoundaries(BoundaryPair boundaries, float padX, float padY, bool immediate) {
-    float rangeX = boundaries.second.second - boundaries.second.first;
-    float rangeY = boundaries.first.second - boundaries.first.first;
+void Canvas::setBoundaries(Boundaries boundaries, float padX, float padY, bool immediate) {
+    float rangeX = boundaries.maxX - boundaries.minX;
+    float rangeY = boundaries.maxY - boundaries.minY;
+    float rangeColor = boundaries.maxColor - boundaries.minColor;
 
-    targetMinY = boundaries.first.first - padY * rangeY;
-    targetMaxY = boundaries.first.second + padY * rangeY;
-    targetMinX = boundaries.second.first - padX * rangeX;
-    targetMaxX = boundaries.second.second + padX * rangeX;
+    targetMinY = boundaries.minY - padY * rangeY;
+    targetMaxY = boundaries.maxY + padY * rangeY;
+    targetMinX = boundaries.minX - padX * rangeX;
+    targetMaxX = boundaries.maxX + padX * rangeX;
+
+    // No padding for color usually, or maybe small padding
+    targetMinColor = boundaries.minColor;
+    targetMaxColor = boundaries.maxColor;
 
     if (immediate) {
         minY = targetMinY;
         maxY = targetMaxY;
         minX = targetMinX;
         maxX = targetMaxX;
+        minColor = targetMinColor;
+        maxColor = targetMaxColor;
     }
 }
 
@@ -289,6 +301,19 @@ void Canvas::createVertexBuffers() {
         findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     vkAllocateMemory(device_, &allocInfo, nullptr, &yBufferMemory);
     vkBindBufferMemory(device_, yBuffer, yBufferMemory, 0);
+
+    // Create the buffer handle for colorBuffer
+    vkCreateBuffer(device_, &bufferInfo, nullptr, &colorBuffer);
+
+    // Get memory requirements for colorBuffer
+    vkGetBufferMemoryRequirements(device_, colorBuffer, &memRequirements);
+
+    // Allocate memory for colorBuffer
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex =
+        findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    vkAllocateMemory(device_, &allocInfo, nullptr, &colorBufferMemory);
+    vkBindBufferMemory(device_, colorBuffer, colorBufferMemory, 0);
 }
 
 int Canvas::getMemoryFd(VkDeviceMemory memory) {
@@ -512,7 +537,7 @@ void Canvas::createGraphicsPipeline() {
     VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
     // Define Binding Descriptions
-    std::vector<VkVertexInputBindingDescription> bindings(2);
+    std::vector<VkVertexInputBindingDescription> bindings(3);
 
     // Binding 0: The X Axis
     bindings[0].binding = 0;
@@ -524,8 +549,13 @@ void Canvas::createGraphicsPipeline() {
     bindings[1].stride = sizeof(float);
     bindings[1].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
+    // Binding 2: The Color/Value Axis
+    bindings[2].binding = 2;
+    bindings[2].stride = sizeof(float);
+    bindings[2].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
     // Define Attribute Descriptions
-    std::vector<VkVertexInputAttributeDescription> attributeDescriptions(2);
+    std::vector<VkVertexInputAttributeDescription> attributeDescriptions(3);
 
     // Attribute 0: Maps to 'in float inX' (Location = 0)
     attributeDescriptions[0].binding = 0;
@@ -538,6 +568,12 @@ void Canvas::createGraphicsPipeline() {
     attributeDescriptions[1].location = 1;
     attributeDescriptions[1].format = VK_FORMAT_R32_SFLOAT;
     attributeDescriptions[1].offset = 0;
+
+    // Attribute 2: Maps to 'in float inValue' (Location = 2)
+    attributeDescriptions[2].binding = 2;
+    attributeDescriptions[2].location = 2;
+    attributeDescriptions[2].format = VK_FORMAT_R32_SFLOAT;
+    attributeDescriptions[2].offset = 0;
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -609,7 +645,7 @@ void Canvas::createGraphicsPipeline() {
     VkPushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(glm::mat4);
+    pushConstantRange.size = sizeof(glm::mat4) + 2 * sizeof(float);
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -734,13 +770,21 @@ void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIn
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     // Push constants for boundaries
-    glm::mat4 projection = glm::ortho(minX, maxX, maxY, minY, -1.0f, 1.0f);
-    vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                       sizeof(glm::mat4), &projection);
+    struct PushConstants {
+        glm::mat4 projection;
+        float minColor;
+        float maxColor;
+    } push;
+    push.projection = glm::ortho(minX, maxX, maxY, minY, -1.0f, 1.0f);
+    push.minColor = minColor;
+    push.maxColor = maxColor;
 
-    VkBuffer vertexBuffers[] = {xBuffer, yBuffer};
-    VkDeviceSize offsets[] = {0, 0};
-    vkCmdBindVertexBuffers(commandBuffer, 0, 2, vertexBuffers, offsets);
+    vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                       sizeof(PushConstants), &push);
+
+    VkBuffer vertexBuffers[] = {xBuffer, yBuffer, colorBuffer};
+    VkDeviceSize offsets[] = {0, 0, 0};
+    vkCmdBindVertexBuffers(commandBuffer, 0, 3, vertexBuffers, offsets);
 
     vkCmdDraw(commandBuffer, static_cast<uint32_t>(bufferSize), 1, 0, 0);
 
@@ -867,10 +911,14 @@ void Canvas::initVulkan() {
     createSyncObjects();
 }
 
-#include <iostream>
+void Canvas::mainLoop(Simulation& sim, int targetFPS, int stepsPerFrame) {
+    using namespace std::chrono;
 
-void Canvas::mainLoop(Simulation& sim) {
+    auto frameDuration = microseconds(1000000 / targetFPS);
+    auto lastFrameTime = high_resolution_clock::now();
+
     while (!glfwWindowShouldClose(window_)) {
+        auto frameStart = high_resolution_clock::now();
         glfwPollEvents();
 
         // Draw first
@@ -879,11 +927,15 @@ void Canvas::mainLoop(Simulation& sim) {
         // It signals 'renderFinished' when done.
         drawFrame();
 
-        // Simulate second
-        // This waits for 'renderFinished' (from the line above).
+        // Simulate 'stepsPerFrame' times
+        // This waits for 'renderFinished' (from the line above) on the first step.
         // It computes the next state.
-        // It signals 'cudaFinished' for the next loop's drawFrame.
-        sim.step();
+        // It signals 'cudaFinished' for the next loop's drawFrame on the last step.
+        for (int i = 0; i < stepsPerFrame; ++i) {
+            bool waitForRender = (i == 0);
+            bool signalRender = (i == stepsPerFrame - 1);
+            sim.step(waitForRender, signalRender);
+        }
 
         // Interpolate boundaries
         float alpha = 0.01f;
@@ -891,6 +943,8 @@ void Canvas::mainLoop(Simulation& sim) {
         maxX += (targetMaxX - maxX) * alpha;
         minY += (targetMinY - minY) * alpha;
         maxY += (targetMaxY - maxY) * alpha;
+        minColor += (targetMinColor - minColor) * alpha;
+        maxColor += (targetMaxColor - maxColor) * alpha;
 
         // Heartbeat: Print a dot every 60 frames
         if (sim.state_.dt % 60 == 0) {
@@ -898,6 +952,22 @@ void Canvas::mainLoop(Simulation& sim) {
         }
 
         setBoundaries(sim.getBoundaries());
+
+        auto frameEnd = high_resolution_clock::now();
+        auto elapsed = duration_cast<microseconds>(frameEnd - frameStart);
+
+        if (elapsed < frameDuration) {
+            std::this_thread::sleep_for(frameDuration - elapsed);
+        } else {
+            // Warn if we are dropping frames, but don't spam
+            static auto lastWarning = high_resolution_clock::now();
+            if (duration_cast<seconds>(frameEnd - lastWarning).count() > 1) {
+                double fps = 1000000.0 / elapsed.count();
+                std::cerr << "\nWarning: Lagging! Actual FPS: " << fps << " (Target: " << targetFPS
+                          << ")" << std::endl;
+                lastWarning = frameEnd;
+            }
+        }
     }
     vkDeviceWaitIdle(device_);
 }
@@ -905,8 +975,10 @@ void Canvas::mainLoop(Simulation& sim) {
 void Canvas::cleanup() {
     vkDestroyBuffer(device_, xBuffer, nullptr);
     vkDestroyBuffer(device_, yBuffer, nullptr);
+    vkDestroyBuffer(device_, colorBuffer, nullptr);
     vkFreeMemory(device_, xBufferMemory, nullptr);
     vkFreeMemory(device_, yBufferMemory, nullptr);
+    vkFreeMemory(device_, colorBufferMemory, nullptr);
 
     vkDestroySemaphore(device_, renderFinishedSemaphore, nullptr);
     vkDestroySemaphore(device_, imageAvailableSemaphore, nullptr);
