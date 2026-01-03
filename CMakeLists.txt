@@ -23,7 +23,7 @@ add_library(venturi_lib
     ${VENTURI_SOURCES}
 )
 
-set_property(TARGET venturi_lib PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+set_property(TARGET venturi_lib PROPERTY CUDA_SEPARABLE_COMPILATION OFF)
 
 target_include_directories(venturi_lib PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(venturi_lib CUDA::cudart CUDA::curand Vulkan::Vulkan glfw glm::glm)
@@ -38,15 +38,17 @@ target_compile_options(venturi PRIVATE
     $<$<CONFIG:Release>:-O2> 
     $<$<COMPILE_LANGUAGE:CUDA>:-Xcudafe=--diag_suppress=20044>
 )
+
 # Testing
 enable_testing()
 
 # Discover ALL cpp files in tests/
 file(GLOB_RECURSE ALL_TEST_FILES "tests/*.cpp")
 
-# Filter OUT the benchmark files
+# Filter OUT the benchmark files and profile files
 set(TEST_SOURCES ${ALL_TEST_FILES})
 list(FILTER TEST_SOURCES EXCLUDE REGEX ".*tests/benchmark/.*")
+list(FILTER TEST_SOURCES EXCLUDE REGEX ".*tests/profile/.*")
 
 # Create the Test Executable with the filtered list
 add_executable(venturi_tests
@@ -81,3 +83,12 @@ if(benchmark_FOUND)
     set_target_properties(venturi_benchmarks PROPERTIES INTERPROCEDURAL_OPTIMIZATION FALSE)
     target_link_options(venturi_benchmarks PRIVATE -fno-lto)
 endif()
+
+# Profiling Tool
+add_executable(venturi_profile
+    tests/profile/profile_simulation.cpp
+)
+target_link_libraries(venturi_profile venturi_lib)
+target_include_directories(venturi_profile PRIVATE 
+    ${CMAKE_SOURCE_DIR}/src
+)
