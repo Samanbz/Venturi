@@ -11,12 +11,27 @@ struct InitState : public BenchmarkState {
     curandState* d_rngStates = nullptr;
     MarketParams params;
 
+    ~InitState() override { cleanup(); }
+
     void allocate(size_t n) override {
-        cudaMalloc(&d_inventory, n * sizeof(float));
-        cudaMalloc(&d_risk_aversion, n * sizeof(float));
-        cudaMalloc(&d_rngStates, n * sizeof(curandState));
+        cudaError_t err;
+        err = cudaMalloc(&d_inventory, n * sizeof(float));
+        if (err != cudaSuccess)
+            printf("cudaMalloc d_inventory failed: %s\n", cudaGetErrorString(err));
+
+        err = cudaMalloc(&d_risk_aversion, n * sizeof(float));
+        if (err != cudaSuccess)
+            printf("cudaMalloc d_risk_aversion failed: %s\n", cudaGetErrorString(err));
+
+        err = cudaMalloc(&d_rngStates, n * sizeof(curandState));
+        if (err != cudaSuccess)
+            printf("cudaMalloc d_rngStates failed: %s\n", cudaGetErrorString(err));
 
         launchSetupRNG(d_rngStates, n, 12345ULL);
+        err = cudaGetLastError();
+        if (err != cudaSuccess)
+            printf("launchSetupRNG failed: %s\n", cudaGetErrorString(err));
+        cudaDeviceSynchronize();
     }
 
     void free_memory() override {
@@ -48,6 +63,11 @@ BENCHMARK_DEFINE_F(InitFixture, InitializeInventories)(benchmark::State& state) 
     for (auto _ : state) {
         launchInitializeExponential(g_init_state.d_inventory, g_init_state.params.decay_rate,
                                     g_init_state.d_rngStates, g_init_state.params.num_agents);
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            state.SkipWithError(cudaGetErrorString(err));
+            break;
+        }
         cudaDeviceSynchronize();
     }
 

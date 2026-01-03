@@ -12,7 +12,7 @@ struct BenchmarkState {
     bool initialized = false;
     size_t current_capacity = 0;
 
-    virtual ~BenchmarkState() { cleanup(); }
+    virtual ~BenchmarkState() {}
 
     virtual void allocate(size_t n) = 0;
     virtual void free_memory() = 0;
@@ -76,7 +76,12 @@ class SimulationFixture : public benchmark::Fixture {
                          const benchmark::State& bench_state,
                          bool use_custom_params = false) {
         state.params.num_agents = bench_state.range(0);
-        int dist_type = bench_state.range(1);
+        int dist_type = 0;
+        // Only access range(1) if it exists (for InitFixture which uses Args)
+        // LocalDensityFixture uses Range which only has 1 arg.
+        // We can't easily check size, so we assume 0 if not provided.
+        // Actually, InitFixture doesn't use setupSimulation.
+        // So we can just set it to 0.
 
         // Set defaults
         state.params.hash_table_size = state.params.num_agents;

@@ -18,6 +18,7 @@ struct SpeedPressureState : public BenchmarkState {
     float* d_execution_cost = nullptr;
     float* d_cash = nullptr;
     int* d_agent_indices = nullptr;
+    float* d_pressure_buffer = nullptr;
     curandState* d_rngStates = nullptr;
     MarketParams params;
 
@@ -33,6 +34,7 @@ struct SpeedPressureState : public BenchmarkState {
         cudaMalloc(&d_execution_cost, n * sizeof(float));
         cudaMalloc(&d_cash, n * sizeof(float));
         cudaMalloc(&d_agent_indices, n * sizeof(int));
+        cudaMalloc(&d_pressure_buffer, 2 * sizeof(float));
         cudaMalloc(&d_rngStates, n * sizeof(curandState));
 
         // Initialize identity mapping for indices
@@ -53,6 +55,7 @@ struct SpeedPressureState : public BenchmarkState {
         cudaFree(d_execution_cost);
         cudaFree(d_cash);
         cudaFree(d_agent_indices);
+        cudaFree(d_pressure_buffer);
         cudaFree(d_rngStates);
     }
 } g_state;
@@ -89,7 +92,7 @@ BENCHMARK_DEFINE_F(SpeedPressureFixture, ComputeSpeedTerms)(benchmark::State& st
     for (auto _ : state) {
         launchComputeSpeedTerms(g_state.d_risk_aversion, g_state.d_local_density,
                                 g_state.d_inventory, g_state.d_speed_term_1, g_state.d_speed_term_2,
-                                dt, g_state.params.num_agents);
+                                dt, g_state.params);
         cudaDeviceSynchronize();
     }
 }
@@ -98,13 +101,12 @@ BENCHMARK_DEFINE_F(SpeedPressureFixture, ComputePressure)(benchmark::State& stat
     float pressure = 0.0f;
     // Pre-compute terms once
     launchComputeSpeedTerms(g_state.d_risk_aversion, g_state.d_local_density, g_state.d_inventory,
-                            g_state.d_speed_term_1, g_state.d_speed_term_2, 0,
-                            g_state.params.num_agents);
+                            g_state.d_speed_term_1, g_state.d_speed_term_2, 0, g_state.params);
     cudaDeviceSynchronize();
 
     for (auto _ : state) {
-        launchComputePressure(g_state.d_speed_term_1, g_state.d_speed_term_2, &pressure,
-                              g_state.params.num_agents);
+        launchComputePressure(g_state.d_speed_term_1, g_state.d_speed_term_2,
+                              g_state.d_pressure_buffer, &pressure, g_state.params.num_agents);
         cudaDeviceSynchronize();
     }
 }
@@ -113,15 +115,14 @@ BENCHMARK_DEFINE_F(SpeedPressureFixture, ComputeSpeed)(benchmark::State& state) 
     float pressure = 10.0f;
     // Pre-compute terms once
     launchComputeSpeedTerms(g_state.d_risk_aversion, g_state.d_local_density, g_state.d_inventory,
-                            g_state.d_speed_term_1, g_state.d_speed_term_2, 0,
-                            g_state.params.num_agents);
+                            g_state.d_speed_term_1, g_state.d_speed_term_2, 0, g_state.params);
     cudaDeviceSynchronize();
 
     for (auto _ : state) {
         launchUpdateAgentState(g_state.d_speed_term_1, g_state.d_speed_term_2,
                                g_state.d_local_density, g_state.d_agent_indices, pressure,
                                g_state.d_speed, g_state.d_inventory, g_state.d_execution_cost,
-                               g_state.d_cash, 100.0f, g_state.params.num_agents);
+                               g_state.d_cash, 100.0f, g_state.params);
         cudaDeviceSynchronize();
     }
 }
@@ -132,15 +133,15 @@ BENCHMARK_DEFINE_F(SpeedPressureFixture, FullSpeedPressureStep)(benchmark::State
     for (auto _ : state) {
         launchComputeSpeedTerms(g_state.d_risk_aversion, g_state.d_local_density,
                                 g_state.d_inventory, g_state.d_speed_term_1, g_state.d_speed_term_2,
-                                dt, g_state.params.num_agents);
+                                dt, g_state.params);
 
-        launchComputePressure(g_state.d_speed_term_1, g_state.d_speed_term_2, &pressure,
-                              g_state.params.num_agents);
+        launchComputePressure(g_state.d_speed_term_1, g_state.d_speed_term_2,
+                              g_state.d_pressure_buffer, &pressure, g_state.params.num_agents);
 
         launchUpdateAgentState(g_state.d_speed_term_1, g_state.d_speed_term_2,
                                g_state.d_local_density, g_state.d_agent_indices, pressure,
                                g_state.d_speed, g_state.d_inventory, g_state.d_execution_cost,
-                               g_state.d_cash, 100.0f, g_state.params.num_agents);
+                               g_state.d_cash, 100.0f, g_state.params);
         cudaDeviceSynchronize();
     }
 }
@@ -148,19 +149,19 @@ BENCHMARK_DEFINE_F(SpeedPressureFixture, FullSpeedPressureStep)(benchmark::State
 BENCHMARK_REGISTER_F(SpeedPressureFixture, ComputeSpeedTerms)
     ->RangeMultiplier(4)
     ->Range(1024, 1048576)
-    ->Unit(benchmark::kMicrosecond);
+    ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(SpeedPressureFixture, ComputePressure)
     ->RangeMultiplier(4)
     ->Range(1024, 1048576)
-    ->Unit(benchmark::kMicrosecond);
+    ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(SpeedPressureFixture, ComputeSpeed)
     ->RangeMultiplier(4)
     ->Range(1024, 1048576)
-    ->Unit(benchmark::kMicrosecond);
+    ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(SpeedPressureFixture, FullSpeedPressureStep)
     ->RangeMultiplier(4)
     ->Range(1024, 1048576)
-    ->Unit(benchmark::kMicrosecond);
+    ->Unit(benchmark::kMillisecond);
