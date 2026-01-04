@@ -13,7 +13,7 @@ static void printBoundaries(const Boundaries& boundaries) {
 
 int main() {
     MarketParams params{};
-    params.num_agents = 10000;
+    params.num_agents = 29000;
     params.num_steps = 10000;
 
     params.time_delta = 1.0f / 30.0f;
@@ -28,7 +28,13 @@ int main() {
     params.sph_smoothing_radius = 1.0f;
     params.congestion_sensitivity = 0.05f;
 
-    params.hash_table_size = exp2(12);
+    // Dynamically size the hash table to ensure low collision rates
+    // Target: ~0.5 agents per bucket or less
+    int power = 1;
+    while ((1 << power) < params.num_agents) {
+        power++;
+    }
+    params.hash_table_size = (1 << (power + 1));
 
     params.decay_rate = 0.00006f;
 
@@ -59,6 +65,6 @@ int main() {
     canvas.setBoundaries(boundaries, 0.1f, 0.1f, true);
 
     // Run at 60 FPS, with 1 simulation step per frame
-    canvas.mainLoop(sim, 60, 1);
+    canvas.mainLoop(sim, 30, 1);
     return 0;
 }

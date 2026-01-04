@@ -92,3 +92,12 @@ target_link_libraries(venturi_profile venturi_lib)
 target_include_directories(venturi_profile PRIVATE 
     ${CMAKE_SOURCE_DIR}/src
 )
+
+# Max Agents Determination Tool
+add_executable(venturi_max_agents
+    tests/profile/determine_max_agents.cpp
+)
+target_link_libraries(venturi_max_agents venturi_lib)
+target_include_directories(venturi_max_agents PRIVATE 
+    ${CMAKE_SOURCE_DIR}/src
+)

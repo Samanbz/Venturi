@@ -64,9 +64,7 @@ BENCHMARK_DEFINE_F(DensityEvolutionFixture, DensityAtStep)(benchmark::State& sta
 // for a fixed number of agents (e.g., 65536 and 262144)
 
 BENCHMARK_REGISTER_F(DensityEvolutionFixture, DensityAtStep)
-    ->Args({10000, 0})
-    ->Args({10000, 100})
-    ->Args({10000, 500})
-    ->Args({10000, 1000})
-    ->Iterations(1)  // Limit iterations to avoid hanging on slow steps
+    ->RangeMultiplier(10)
+    ->Ranges({{10000, 10000}, {0, 10000}})
+    ->Iterations(5)  // Limit iterations to avoid hanging on slow steps
     ->Unit(benchmark::kMillisecond);
