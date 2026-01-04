@@ -3,6 +3,10 @@
 layout(location = 0) in float fragValue;
 layout(location = 0) out vec4 outColor;
 
+layout(push_constant) uniform PushConstants {
+    layout(offset = 72) float trailWeight;
+} push;
+
 // Blue-White-Red colormap
 // t is in [0, 1], where 0.5 is the neutral point (zero)
 vec3 cold_hot(float t) {
@@ -29,5 +33,7 @@ void main() {
     float t = clamp(fragValue, 0.0, 1.0);
     
     vec3 color = cold_hot(t);
-    outColor = vec4(color, 0.3);
+    // Apply trail weight to RGB, keep Alpha as is (or scale it too?)
+    // If we scale RGB, it becomes darker.
+    outColor = vec4(color * push.trailWeight, 0.3);
 }

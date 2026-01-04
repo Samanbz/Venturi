@@ -269,6 +269,16 @@ class Canvas {
      */
     void cleanup();
 
+    void createOffscreenResources();
+    void createOffscreenRenderPass();
+    void createOffscreenFramebuffer();
+    void createFadePipeline();
+    void createCopyPipeline();
+    void createDescriptorSetLayout();
+    void createDescriptorPool();
+    void createDescriptorSet();
+    void createTextureSampler();
+
     const uint32_t WIDTH = 1920;
     const uint32_t HEIGHT = 1080;
 
@@ -319,6 +329,7 @@ class Canvas {
 
     VkPipelineLayout pipelineLayout;
     VkPipeline graphicsPipeline;
+    VkPipeline offscreenGraphicsPipeline;
 
     VkCommandPool commandPool;
     VkCommandBuffer commandBuffer;
@@ -329,4 +340,22 @@ class Canvas {
     VkSemaphore vulkanFinishedSemaphore;
 
     VkFence inFlightFence;
+
+    // Offscreen resources for trails
+    VkImage offscreenImage;
+    VkDeviceMemory offscreenImageMemory;
+    VkImageView offscreenImageView;
+    VkRenderPass offscreenRenderPass;
+    VkFramebuffer offscreenFramebuffer;
+
+    VkPipeline fadePipeline;
+    VkPipelineLayout fadePipelineLayout;
+
+    VkPipeline copyPipeline;
+    VkPipelineLayout copyPipelineLayout;
+
+    VkDescriptorSetLayout descriptorSetLayout;
+    VkDescriptorPool descriptorPool;
+    VkDescriptorSet descriptorSet;
+    VkSampler textureSampler;
 };

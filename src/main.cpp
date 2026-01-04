@@ -13,20 +13,20 @@ static void printBoundaries(const Boundaries& boundaries) {
 
 int main() {
     MarketParams params{};
-    params.num_agents = 10000;
-    params.num_steps = 5000;
+    params.num_agents = 20000;
+    params.num_steps = 10000;
 
-    params.time_delta = 1.0f / 30.0f;
+    params.time_delta = 1.0f / 60.0f;
     params.price_init = 100.0f;
     params.price_randomness_stddev = 0.8f;  // Increased for visual noise
 
     // Weaken the permanent feedback loop to ensure Sum(C1) < 1.0
-    params.permanent_impact = 1e-6f;
+    params.permanent_impact = 1e-5f;
     // Strengthen the cost of trading to act as a "brake" on speed
     params.temporary_impact = 0.01f;
 
     params.sph_smoothing_radius = 1.0f;
-    params.congestion_sensitivity = 0.01f;
+    params.congestion_sensitivity = 0.03f;
 
     // Dynamically size the hash table to ensure low collision rates
     // Target: ~0.5 agents per bucket or less
@@ -36,10 +36,10 @@ int main() {
     }
     params.hash_table_size = (1 << (power + 1));
 
-    params.decay_rate = 0.00006f;
+    params.decay_rate = 0.00001f;
 
     // Agent Parameters
-    params.mass_alpha = 0.4f;
+    params.mass_alpha = 0.5f;
     params.mass_beta = 0.1f;
     params.risk_mean = 0.001f;  // Lower risk aversion usually looks better visually
     params.risk_stddev = 2.0f;
@@ -65,6 +65,6 @@ int main() {
     canvas.setBoundaries(boundaries, 0.1f, 0.1f, true);
 
     // Run at 60 FPS, with 1 simulation step per frame
-    canvas.mainLoop(sim, 30, 1);
+    canvas.mainLoop(sim, 60, 1);
     return 0;
 }
