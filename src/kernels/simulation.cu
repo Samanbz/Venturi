@@ -44,14 +44,9 @@ __global__ void buildSpatialHashKernel(const float* inventory,
 
     // Compute unbounded spatial hash
     unsigned int h = ((unsigned int) grid_x * 73856093) ^ ((unsigned int) grid_y * 19349663);
-    int hash = h % params.hash_table_size;
+    // Use bitwise AND for modulo since hash_table_size is power of 2
+    int hash = h & (params.hash_table_size - 1);
 
-    // Safety check
-    if (hash < 0 || hash >= params.hash_table_size)
-        return;
-
-    // Insert into linked list
-    // atomicExch returns the old value at the address
     int old_head = atomicExch(&cell_head[hash], idx);
     agent_next[idx] = old_head;
 }
@@ -61,7 +56,12 @@ __device__ inline float computeInteraction(
     float d_inv = my_inv - n_inv;
     float d_cost = my_cost - n_cost;
     float r2 = d_inv * d_inv + d_cost * d_cost;
-    return (r2 < h2) ? (poly6 * powf(h2 - r2, 3)) : 0.0f;
+
+    if (r2 < h2) {
+        float term = h2 - r2;
+        return poly6 * term * term * term;
+    }
+    return 0.0f;
 }
 
 __global__ void computeLocalDensitiesKernel(const float* __restrict__ inventory,
@@ -74,39 +74,44 @@ __global__ void computeLocalDensitiesKernel(const float* __restrict__ inventory,
     if (idx >= params.num_agents)
         return;
 
-    float my_inv = inventory[idx];
-    float my_cost = execution_cost[idx];
+    float my_inv = __ldg(&inventory[idx]);
+    float my_cost = __ldg(&execution_cost[idx]);
 
     // Constants
     float h2 = params.sph_smoothing_radius * params.sph_smoothing_radius;
-    float poly6 = 315.0f / (64.0f * 3.14159265f * powf(params.sph_smoothing_radius, 9));
+    // Precompute powf(radius, 9)
+    float h9 = h2 * h2 * h2 * params.sph_smoothing_radius * params.sph_smoothing_radius *
+               params.sph_smoothing_radius;
+    float poly6 = 315.0f / (64.0f * 3.14159265f * h9);
+
     float density_acc = 0.0f;
 
     long long my_grid_x = floor(my_cost / params.sph_smoothing_radius);
     long long my_grid_y = floor(my_inv / params.sph_smoothing_radius);
 
-    // Flattened Neighbor Loop
-    for (int n = 0; n < 9; n++) {
-        long long neighbor_grid_x = my_grid_x + ((n % 3) - 1);
-        long long neighbor_grid_y = my_grid_y + ((n / 3) - 1);
+    int hash_mask = params.hash_table_size - 1;
 
-        unsigned int h = ((unsigned int) neighbor_grid_x * 73856093) ^
-                         ((unsigned int) neighbor_grid_y * 19349663);
-        int hash = h % params.hash_table_size;
+    // Nested Neighbor Loop to avoid division/modulo
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            long long neighbor_grid_x = my_grid_x + dx;
+            long long neighbor_grid_y = my_grid_y + dy;
 
-        if (hash < 0 || hash >= params.hash_table_size)
-            continue;
+            unsigned int h = ((unsigned int) neighbor_grid_x * 73856093) ^
+                             ((unsigned int) neighbor_grid_y * 19349663);
+            int hash = h & hash_mask;
 
-        // Traverse Linked List
-        int curr = cell_head[hash];
-        while (curr != -1) {
-            float n_inv = inventory[curr];
-            float n_cost = execution_cost[curr];
-            float neighbor_mass = params.mass_alpha + params.mass_beta * n_inv;
-            density_acc +=
-                neighbor_mass * computeInteraction(my_inv, my_cost, n_inv, n_cost, h2, poly6);
+            // Traverse Linked List
+            int curr = cell_head[hash];
+            while (curr != -1) {
+                float n_inv = __ldg(&inventory[curr]);
+                float n_cost = __ldg(&execution_cost[curr]);
+                float neighbor_mass = params.mass_alpha + params.mass_beta * n_inv;
+                density_acc +=
+                    neighbor_mass * computeInteraction(my_inv, my_cost, n_inv, n_cost, h2, poly6);
 
-            curr = agent_next[curr];
+                curr = __ldg(&agent_next[curr]);
+            }
         }
     }
 
