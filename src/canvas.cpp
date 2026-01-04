@@ -885,7 +885,7 @@ void Canvas::drawFrame() {
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
     presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = signalSemaphores;
+    presentInfo.pWaitSemaphores = &renderFinishedSemaphore;
 
     VkSwapchainKHR swapChains[] = {swapChain_};
     presentInfo.swapchainCount = 1;
