@@ -13,8 +13,8 @@ static void printBoundaries(const Boundaries& boundaries) {
 
 int main() {
     MarketParams params{};
-    params.num_agents = 29000;
-    params.num_steps = 10000;
+    params.num_agents = 10000;
+    params.num_steps = 5000;
 
     params.time_delta = 1.0f / 30.0f;
     params.price_init = 100.0f;
@@ -26,7 +26,7 @@ int main() {
     params.temporary_impact = 0.01f;
 
     params.sph_smoothing_radius = 1.0f;
-    params.congestion_sensitivity = 0.05f;
+    params.congestion_sensitivity = 0.01f;
 
     // Dynamically size the hash table to ensure low collision rates
     // Target: ~0.5 agents per bucket or less
@@ -42,7 +42,7 @@ int main() {
     params.mass_alpha = 0.4f;
     params.mass_beta = 0.1f;
     params.risk_mean = 0.001f;  // Lower risk aversion usually looks better visually
-    params.risk_stddev = 0.6f;
+    params.risk_stddev = 2.0f;
 
     Canvas canvas{params.num_agents};
 

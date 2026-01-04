@@ -65,6 +65,6 @@ BENCHMARK_DEFINE_F(DensityEvolutionFixture, DensityAtStep)(benchmark::State& sta
 
 BENCHMARK_REGISTER_F(DensityEvolutionFixture, DensityAtStep)
     ->RangeMultiplier(10)
-    ->Ranges({{10000, 10000}, {0, 10000}})
-    ->Iterations(5)  // Limit iterations to avoid hanging on slow steps
+    ->Ranges({{10000, 30000}, {1, 50000}})
+    ->Iterations(1)  // Limit iterations to avoid hanging on slow steps
     ->Unit(benchmark::kMillisecond);

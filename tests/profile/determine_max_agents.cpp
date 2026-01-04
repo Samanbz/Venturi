@@ -13,7 +13,7 @@ bool checkPerformance(int num_agents, int max_steps, float max_frame_time_ms) {
     MarketParams params;
     params.num_agents = num_agents;
     params.num_steps = max_steps;
-    params.time_delta = 1.0f / 60.0f;
+    params.time_delta = max_frame_time_ms / 1000.0f;
     params.price_init = 100.0f;
     params.price_randomness_stddev = 0.1f;
     params.permanent_impact = 1e-5f;
