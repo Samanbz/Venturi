@@ -24,6 +24,7 @@ int main(int argc, char** argv) {
     int numAgents = 100000;  // Default
     int width = 0;
     int height = 0;
+    int stepsPerFrame = 10;  // Default
 
     // Simple argument parsing
     for (int i = 1; i < argc; ++i) {
@@ -39,6 +40,8 @@ int main(int argc, char** argv) {
             width = std::stoi(argv[++i]);
         } else if (strcmp(argv[i], "--height") == 0 && i + 1 < argc) {
             height = std::stoi(argv[++i]);
+        } else if (strcmp(argv[i], "--steps") == 0 && i + 1 < argc) {
+            stepsPerFrame = std::stoi(argv[++i]);
         }
     }
 
@@ -49,7 +52,7 @@ int main(int argc, char** argv) {
 
     MarketParams params{};
     params.num_agents = numAgents;
-    params.num_steps = 5000;
+    params.num_steps = numFrames * stepsPerFrame;
 
     params.time_delta = 1.0f / 30.0f;
     params.price_init = 100.0f;
@@ -85,6 +88,8 @@ int main(int argc, char** argv) {
         canvas = std::make_unique<RealTimeCanvas>(params.num_agents, static_cast<uint32_t>(width),
                                                   static_cast<uint32_t>(height));
     }
+
+    canvas->setStepsPerFrame(stepsPerFrame);
 
     auto [X_devicePtr, Y_devicePtr, Color_devicePtr] = canvas->getCudaDevicePointers();
     auto [fdWait, fdSignal] = canvas->exportSemaphores();

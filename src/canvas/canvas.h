@@ -99,10 +99,13 @@ class Canvas {
                        float padY = 0.1f,
                        bool immediate = false);
 
+    void setStepsPerFrame(int steps) { stepsPerFrame_ = steps; }
+
     // The main entry point for the simulation loop
     virtual void run(Simulation& sim) = 0;
 
    protected:
+    int stepsPerFrame_ = 2;  // Default speed
     void initVulkan();
     void createVulkanInstance();
     void pickPhysicalDevice();

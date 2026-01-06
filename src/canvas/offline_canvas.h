@@ -55,6 +55,7 @@ class OfflineCanvas : public Canvas {
 
     VkBuffer downloadBuffer_;
     VkDeviceMemory downloadBufferMemory_;
+    void* mappedData_ = nullptr;  // Persistent mapping
 
     // Threading components
     struct FrameData {
@@ -66,5 +67,6 @@ class OfflineCanvas : public Canvas {
     std::mutex queueMutex_;
     std::condition_variable queueCv_;
     std::queue<FrameData> writeQueue_;
+    std::queue<std::vector<unsigned char>> recycleQueue_;  // Optimization: Buffer Pooling
     std::atomic<bool> stopWriter_{false};
 };

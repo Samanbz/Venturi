@@ -33,6 +33,10 @@ OfflineCanvas::~OfflineCanvas() {
         writerThread_.join();
     }
 
+    if (mappedData_) {
+        vkUnmapMemory(device_, downloadBufferMemory_);
+    }
+
     vkDestroyFramebuffer(device_, offlineFramebuffer_, nullptr);
     vkDestroyImageView(device_, offlineImageView_, nullptr);
     vkDestroyImage(device_, offlineImage_, nullptr);
@@ -93,6 +97,9 @@ void OfflineCanvas::initSwapchainResources() {
                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
     vkAllocateMemory(device_, &allocInfo, nullptr, &downloadBufferMemory_);
     vkBindBufferMemory(device_, downloadBuffer_, downloadBufferMemory_, 0);
+
+    // Persistent Map
+    vkMapMemory(device_, downloadBufferMemory_, 0, width_ * height_ * 4, 0, &mappedData_);
 }
 
 void OfflineCanvas::createFramebuffers() {
@@ -142,9 +149,16 @@ void OfflineCanvas::drawFrame(Simulation& sim, bool& running) {
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     VkSemaphore waitSemaphores[] = {cudaFinishedSemaphore};
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_VERTEX_INPUT_BIT};
-    submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = waitSemaphores;
-    submitInfo.pWaitDstStageMask = waitStages;
+
+    // Only wait for CUDA if it's not the first frame (first frame has no preceding simulation step)
+    if (currentFrame_ > 0) {
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = waitSemaphores;
+        submitInfo.pWaitDstStageMask = waitStages;
+    } else {
+        submitInfo.waitSemaphoreCount = 0;
+    }
+
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
     VkSemaphore signalSemaphores[] = {vulkanFinishedSemaphore};
@@ -155,14 +169,24 @@ void OfflineCanvas::drawFrame(Simulation& sim, bool& running) {
 
 void OfflineCanvas::saveFrame(int frameNum) {
     vkWaitForFences(device_, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
-    void* data;
-    vkMapMemory(device_, downloadBufferMemory_, 0, width_ * height_ * 4, 0, &data);
+    // mappedData_ is already valid
 
-    // Copy to vector
-    std::vector<unsigned char> pixels(width_ * height_ * 4);
-    std::memcpy(pixels.data(), data, width_ * height_ * 4);
+    // Get buffer from Recycler
+    std::vector<unsigned char> pixels;
+    {
+        std::lock_guard<std::mutex> lock(queueMutex_);
+        if (!recycleQueue_.empty()) {
+            pixels = std::move(recycleQueue_.front());
+            recycleQueue_.pop();
+        }
+    }
 
-    vkUnmapMemory(device_, downloadBufferMemory_);
+    if (pixels.empty()) {
+        pixels.resize(width_ * height_ * 4);
+    }
+
+    // Direct Memcpy
+    std::memcpy(pixels.data(), mappedData_, width_ * height_ * 4);
 
     // Push to queue
     {
@@ -207,6 +231,15 @@ void OfflineCanvas::writerLoop() {
             }
             file.write(reinterpret_cast<const char*>(row.data()), width_ * 3);
         }
+
+        // Recycle the buffer
+        {
+            std::lock_guard<std::mutex> lock(queueMutex_);
+            // Don't keep too many in memory if writer is fast
+            if (recycleQueue_.size() < 10) {
+                recycleQueue_.push(std::move(frame.pixels));
+            }
+        }
     }
 }
 
@@ -222,13 +255,34 @@ void OfflineCanvas::run(Simulation& sim) {
     std::cout << "Total Frames: " << framesToRender << std::endl;
     std::cout << "Output Directory: " << outputDir_ << std::endl;
 
-    // 2 steps per frame default
+    // Initial boundary setup
+    setBoundaries(sim.getBoundaries(), 0.1f, 0.1f, true);
+
     for (int i = 0; i < numFrames_; ++i) {
+        currentFrame_ = i;
+
+        // Smooth camera movement
+        // Alpha adjusted to match RealTime (approx 0.01 at 60Hz ~= 0.02 at 30Hz)
+        float alpha = 0.02f;
+        minX += (targetMinX - minX) * alpha;
+        maxX += (targetMaxX - maxX) * alpha;
+        minY += (targetMinY - minY) * alpha;
+        maxY += (targetMaxY - maxY) * alpha;
+        minColor += (targetMinColor - minColor) * alpha;
+        maxColor += (targetMaxColor - maxColor) * alpha;
+
         bool r = true;
         drawFrame(sim, r);
         saveFrame(i);  // This waits for fence
 
-        sim.step(true, true);
+        for (int k = 0; k < stepsPerFrame_; ++k) {
+            bool waitForRender = (k == 0);
+            bool signalRender = (k == stepsPerFrame_ - 1);
+            sim.step(false, signalRender);
+        }
+
+        // Update targets for next frame
+        setBoundaries(sim.getBoundaries(), 0.1f, 0.1f, false);  // Non-immediate
 
         // Progress Bar & Time Estimation
         auto now = std::chrono::steady_clock::now();
@@ -272,8 +326,6 @@ void OfflineCanvas::run(Simulation& sim) {
             lastUpdate = now;
             lastUpdateFrame = i + 1;
         }
-
-        setBoundaries(sim.getBoundaries(), 0.1f, 0.1f, true);  // Immediate update for consistency
     }
     std::cout << std::endl << "Rendering complete!" << std::endl;
 }

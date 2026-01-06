@@ -123,6 +123,9 @@ Simulation::Simulation(const MarketParams& params,
         cudaMemset(state_.d_cash, 0, size);
     if (state_.d_execution_cost == vk_X || state_.d_execution_cost == vk_Y)
         cudaMemset(state_.d_execution_cost, 0, size);
+
+    // Ensure all initialization kernels and memsets are complete before rendering starts
+    cudaDeviceSynchronize();
 }
 
 Boundaries Simulation::getBoundaries() const {

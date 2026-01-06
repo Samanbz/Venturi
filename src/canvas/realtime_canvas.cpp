@@ -218,7 +218,6 @@ void RealTimeCanvas::drawFrame(Simulation& sim, bool& running) {
 void RealTimeCanvas::run(Simulation& sim) {
     const int targetFPS = 60;
     const microseconds frameDuration(1000000 / targetFPS);
-    int stepsPerFrame = 2;
 
     // Note: Main calls sim.step() once before calling run(), so the pipeline is primed.
     bool running = true;
@@ -228,9 +227,9 @@ void RealTimeCanvas::run(Simulation& sim) {
 
         drawFrame(sim, running);  // waits for cudaFinished
 
-        for (int i = 0; i < stepsPerFrame; ++i) {
+        for (int i = 0; i < stepsPerFrame_; ++i) {
             bool waitForRender = (i == 0);
-            bool signalRender = (i == stepsPerFrame - 1);
+            bool signalRender = (i == stepsPerFrame_ - 1);
             sim.step(waitForRender, signalRender);
         }
 
