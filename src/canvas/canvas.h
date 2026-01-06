@@ -140,7 +140,8 @@ class Canvas {
     int getSemaphoreFd(VkSemaphore semaphore);
     void recordCommandBuffer(VkCommandBuffer commandBuffer,
                              VkFramebuffer framebuffer,
-                             VkExtent2D extent);
+                             VkExtent2D extent,
+                             bool endCommandBuffer = true);
 
     SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
 

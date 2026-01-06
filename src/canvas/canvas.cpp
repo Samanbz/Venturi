@@ -464,7 +464,8 @@ void Canvas::createSyncObjects() {
 
 void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer,
                                  VkFramebuffer framebuffer,
-                                 VkExtent2D extent) {
+                                 VkExtent2D extent,
+                                 bool endCommandBuffer) {
     size_t bufferSize = numVertices;
 
     VkCommandBufferBeginInfo beginInfo{};
@@ -550,7 +551,10 @@ void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer,
     vkCmdDraw(commandBuffer, static_cast<uint32_t>(bufferSize), 1, 0, 0);
 
     vkCmdEndRenderPass(commandBuffer);
-    vkEndCommandBuffer(commandBuffer);
+
+    if (endCommandBuffer) {
+        vkEndCommandBuffer(commandBuffer);
+    }
 }
 
 void Canvas::createOffscreenRenderPass() {

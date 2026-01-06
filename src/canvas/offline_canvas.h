@@ -1,5 +1,12 @@
 #pragma once
 
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
+#include <queue>
+#include <thread>
+#include <vector>
+
 #include "canvas.h"
 
 /**
@@ -34,6 +41,9 @@ class OfflineCanvas : public Canvas {
    private:
     void saveFrame(int frameNum);
 
+    // Async Writer
+    void writerLoop();
+
     std::string outputDir_;
     int numFrames_;
     int currentFrame_ = 0;
@@ -45,4 +55,16 @@ class OfflineCanvas : public Canvas {
 
     VkBuffer downloadBuffer_;
     VkDeviceMemory downloadBufferMemory_;
+
+    // Threading components
+    struct FrameData {
+        int frameNum;
+        std::vector<unsigned char> pixels;
+    };
+
+    std::thread writerThread_;
+    std::mutex queueMutex_;
+    std::condition_variable queueCv_;
+    std::queue<FrameData> writeQueue_;
+    std::atomic<bool> stopWriter_{false};
 };
