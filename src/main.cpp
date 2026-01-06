@@ -1,7 +1,13 @@
-
+#include <cstring>
+#include <filesystem>
 #include <iostream>
+#include <memory>
+#include <string>
+#include <vector>
 
-#include "canvas.h"
+#include "./canvas/canvas.h"
+#include "./canvas/offline_canvas.h"
+#include "./canvas/realtime_canvas.h"
 #include "simulation.h"
 
 static void printBoundaries(const Boundaries& boundaries) {
@@ -11,43 +17,77 @@ static void printBoundaries(const Boundaries& boundaries) {
               << "]\n";
 }
 
-int main() {
+int main(int argc, char** argv) {
+    bool offlineMode = false;
+    std::string outputDir = "output";
+    int numFrames = 1200;    // Default 40 seconds at 30fps
+    int numAgents = 100000;  // Default
+    int width = 0;
+    int height = 0;
+
+    // Simple argument parsing
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--offline") == 0) {
+            offlineMode = true;
+        } else if (strcmp(argv[i], "--out-dir") == 0 && i + 1 < argc) {
+            outputDir = argv[++i];
+        } else if (strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
+            numFrames = std::stoi(argv[++i]);
+        } else if (strcmp(argv[i], "--agents") == 0 && i + 1 < argc) {
+            numAgents = std::stoi(argv[++i]);
+        } else if (strcmp(argv[i], "--width") == 0 && i + 1 < argc) {
+            width = std::stoi(argv[++i]);
+        } else if (strcmp(argv[i], "--height") == 0 && i + 1 < argc) {
+            height = std::stoi(argv[++i]);
+        }
+    }
+
+    if (width == 0)
+        width = 1920;
+    if (height == 0)
+        height = 1080;
+
     MarketParams params{};
-    params.num_agents = 20000;
-    params.num_steps = 10000;
+    params.num_agents = numAgents;
+    params.num_steps = 5000;
 
-    params.time_delta = 1.0f / 60.0f;
+    params.time_delta = 1.0f / 30.0f;
     params.price_init = 100.0f;
-    params.price_randomness_stddev = 0.8f;  // Increased for visual noise
-
-    // Weaken the permanent feedback loop to ensure Sum(C1) < 1.0
-    params.permanent_impact = 1e-5f;
-    // Strengthen the cost of trading to act as a "brake" on speed
+    params.price_randomness_stddev = 0.8f;
+    params.permanent_impact = 1e-6f;
     params.temporary_impact = 0.01f;
-
-    params.sph_smoothing_radius = 1.0f;
+    params.sph_smoothing_radius = 0.9f;
     params.congestion_sensitivity = 0.03f;
-
-    // Dynamically size the hash table to ensure low collision rates
-    // Target: ~0.5 agents per bucket or less
     int power = 1;
     while ((1 << power) < params.num_agents) {
         power++;
     }
     params.hash_table_size = (1 << (power + 1));
-
-    params.decay_rate = 0.00001f;
-
-    // Agent Parameters
+    params.decay_rate = 1e-5f;
     params.mass_alpha = 0.5f;
     params.mass_beta = 0.1f;
-    params.risk_mean = 0.001f;  // Lower risk aversion usually looks better visually
+    params.risk_mean = 0.001f;
     params.risk_stddev = 2.0f;
 
-    Canvas canvas{params.num_agents};
+    std::unique_ptr<Canvas> canvas;
 
-    auto [X_devicePtr, Y_devicePtr, Color_devicePtr] = canvas.getCudaDevicePointers();
-    auto [fdWait, fdSignal] = canvas.exportSemaphores();
+    if (offlineMode) {
+        std::cout << "Starting offline rendering..." << std::endl;
+        std::cout << "Agents: " << numAgents << std::endl;
+        std::cout << "Frames: " << numFrames << std::endl;
+        std::cout << "Output Directory: " << outputDir << std::endl;
+        std::filesystem::create_directories(outputDir);
+
+        canvas =
+            std::make_unique<OfflineCanvas>(params.num_agents, static_cast<uint32_t>(width),
+                                            static_cast<uint32_t>(height), outputDir, numFrames);
+    } else {
+        canvas = std::make_unique<RealTimeCanvas>(params.num_agents, static_cast<uint32_t>(width),
+                                                  static_cast<uint32_t>(height));
+    }
+
+    auto [X_devicePtr, Y_devicePtr, Color_devicePtr] = canvas->getCudaDevicePointers();
+    auto [fdWait, fdSignal] = canvas->exportSemaphores();
 
     Simulation sim{params,
                    X_devicePtr,
@@ -58,13 +98,20 @@ int main() {
                    PlotVar::Speed};
     sim.importSemaphores(fdWait, fdSignal);
 
+    // Initial step to stabilize and compute initial boundaries
     sim.step();
 
+    // Initial boundary setup
     Boundaries boundaries = sim.getBoundaries();
     printBoundaries(boundaries);
-    canvas.setBoundaries(boundaries, 0.1f, 0.1f, true);
+    canvas->setBoundaries(boundaries, 0.1f, 0.1f, true);
 
-    // Run at 60 FPS, with 1 simulation step per frame
-    canvas.mainLoop(sim, 60, 1);
+    // Run the loop
+    canvas->run(sim);
+
+    if (offlineMode) {
+        std::cout << "\nOffline rendering complete." << std::endl;
+    }
+
     return 0;
 }

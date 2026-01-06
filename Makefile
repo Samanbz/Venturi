@@ -43,6 +43,8 @@ benchmark: build
 # Clean build artifacts
 clean:
 	@rm -rf $(BUILD_DIR)
+	@rm -rf output/
+	@echo "Cleaned build and output directories."
 
 # Full rebuild
 rebuild: clean build
@@ -62,3 +64,6 @@ help:
 	@echo "  rebuild      - Clean and rebuild"
 	@echo "  configure    - Run CMake configuration"
 	@echo "  help         - Show this help message"
+
+ffmpeg:
+	ffmpeg -framerate 30 -i output/frame_%05d.ppm -c:v libx264 -pix_fmt yuv420p -crf 17 output.mp4

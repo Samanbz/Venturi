@@ -2,6 +2,12 @@
 build/
 cmake-build-*/
 
+# Output files
+output/
+*.ppm
+*.mp4
+*.csv
+
 # CMake generated files
 CMakeCache.txt
 CMakeFiles/
@@ -25,10 +31,6 @@ _deps
 *.so
 *.dylib
 *.dll
-
-# Fortran module files
-*.mod
-*.smod
 
 # Compiled Static libraries
 *.lai
