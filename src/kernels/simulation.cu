@@ -106,7 +106,8 @@ __global__ void computeLocalDensitiesKernel(const float* __restrict__ inventory,
             while (curr != -1) {
                 float n_inv = __ldg(&inventory[curr]);
                 float n_cost = __ldg(&execution_cost[curr]);
-                float neighbor_mass = params.mass_alpha + params.mass_beta * n_inv;
+                // Use absolute inventory for mass to prevent negative density/impact
+                float neighbor_mass = params.mass_alpha + params.mass_beta * fabsf(n_inv);
                 density_acc +=
                     neighbor_mass * computeInteraction(my_inv, my_cost, n_inv, n_cost, h2, poly6);
 
@@ -152,11 +153,13 @@ __global__ void computeSpeedTermsKernel(const float* __restrict__ risk_aversion,
     if (idx >= params.num_agents)
         return;
 
+    float time_remaining = (params.num_steps - dt) * params.time_delta;
+
     float personal_decay_rate = sqrtf(risk_aversion[idx] / params.temporary_impact);
     float local_temporary_impact =
         params.temporary_impact * (1 + params.congestion_sensitivity * local_density[idx]);
     speed_term_1[idx] = params.permanent_impact *
-                        (1 - expf(-personal_decay_rate * (params.num_steps - dt))) /
+                        (1 - expf(-personal_decay_rate * time_remaining)) /
                         (2 * local_temporary_impact * personal_decay_rate);
     speed_term_2[idx] = (2 * sqrtf(params.temporary_impact * risk_aversion[idx]) * inventory[idx]) /
                         (2 * local_temporary_impact);
@@ -182,8 +185,14 @@ __global__ void updateAgentStateKernel(const float* __restrict__ speed_term_1,
     speed[idx] = pressure * speed_term_1[idx] - speed_term_2[idx];
 
     float new_inv = inventory[idx] + speed[idx] * params.time_delta;
-    // Clamp new inventory to 0 if it goes negative
-    new_inv = fmaxf(new_inv, 0.0f);
+    // Clamp based on initial role
+    if (idx < params.num_agents / 2) {
+        // Seller: limit to 0 from above
+        new_inv = fmaxf(new_inv, 0.0f);
+    } else {
+        // Buyer: limit to 0 from below
+        new_inv = fminf(new_inv, 0.0f);
+    }
     inventory[idx] = new_inv;
     float new_execution_cost = -local_temporary_impact * speed[idx];
     execution_cost[idx] = new_execution_cost;

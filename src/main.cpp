@@ -59,7 +59,7 @@ int main(int argc, char** argv) {
     params.price_randomness_stddev = 1.0f;
     params.permanent_impact = 1e-6f;
     params.temporary_impact = 0.05f;
-    params.sph_smoothing_radius = 0.8f;
+    params.sph_smoothing_radius = 1.0f;
     params.congestion_sensitivity = 0.09f;
     int power = 1;
     while ((1 << power) < params.num_agents) {
@@ -68,9 +68,9 @@ int main(int argc, char** argv) {
     params.hash_table_size = (1 << (power + 1));
     params.decay_rate = 1e-4f;
     params.mass_alpha = 0.001f;
-    params.mass_beta = 0.05f;
+    params.mass_beta = 0.09f;
     params.risk_mean = 0.001f;
-    params.risk_stddev = 1.6f;
+    params.risk_stddev = 2.0f;
 
     std::unique_ptr<Canvas> canvas;
 

@@ -6,6 +6,7 @@
 #include <ctime>
 #include <iostream>
 #include <limits>
+#include <numeric>
 #include <optional>
 #include <random>
 #include <set>
@@ -104,6 +105,10 @@ Simulation::Simulation(const MarketParams& params,
     // Initialize device memory using persistent RNG states
     launchInitializeExponential(state_.d_inventory, params.decay_rate, state_.d_rngStates,
                                 params.num_agents);
+
+    // Initialize half as buyers (negative inventory)
+    launchFlipSigns(state_.d_inventory, params.num_agents);
+
     // Initialize from log-normal to avoid negative values leading to NaNs later
     launchInitializeLogNormal(state_.d_risk_aversion, params.risk_mean, params.risk_stddev,
                               state_.d_rngStates, params.num_agents);

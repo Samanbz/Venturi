@@ -22,7 +22,9 @@ void main() {
 
     float val_centered = inValue - center;
     
-    float scale_factor = 300.0; // Speed/Cost at which we reach ~76% saturation
+    // Tanh compression for better dynamic range visibility
+    // 100.0 is the "soft knee" speed - values below this are linear-ish, above are compressed
+    float scale_factor = 100.0; 
     float normalized = tanh(val_centered / scale_factor);
     
     // Map [-1, 1] from tanh to [0, 1] for the fragment shader

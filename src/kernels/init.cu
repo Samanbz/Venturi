@@ -112,3 +112,22 @@ void launchInitializeLogNormal(
     initializeLogNormalKernel<<<numBlocks, blockSize>>>(d_data, mean, stddev, d_rngStates,
                                                         num_agents);
 }
+
+// Kernel to flip signs for the second half of agents
+__global__ void flipSignsKernel(float* data, int num_agents) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_agents)
+        return;
+
+    // Second half are buyers (negative inventory)
+    if (idx >= num_agents / 2) {
+        data[idx] = -data[idx];
+    }
+}
+
+void launchFlipSigns(float* d_data, int num_agents) {
+    int blockSize = 256;
+    int numBlocks = (num_agents + blockSize - 1) / blockSize;
+
+    flipSignsKernel<<<numBlocks, blockSize>>>(d_data, num_agents);
+}

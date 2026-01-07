@@ -15,6 +15,8 @@ extern void launchInitializeNormal(
 extern void launchInitializeLogNormal(
     float* d_data, float mean, float stddev, curandState* d_rngStates, int num_agents);
 
+extern void launchFlipSigns(float* d_data, int num_agents);
+
 extern void launchBuildSpatialHash(const float* d_inventory,
                                    const float* d_execution_cost,
                                    int* d_cell_head,

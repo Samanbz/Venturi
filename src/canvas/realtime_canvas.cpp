@@ -234,7 +234,7 @@ void RealTimeCanvas::run(Simulation& sim) {
         }
 
         // Update boundaries
-        float alpha = 0.01f;
+        float alpha = 0.001f;
         minX += (targetMinX - minX) * alpha;
         maxX += (targetMaxX - maxX) * alpha;
         minY += (targetMinY - minY) * alpha;
