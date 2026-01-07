@@ -22,12 +22,9 @@ void main() {
 
     float val_centered = inValue - center;
     
-    // Apply non-linear compression (sqrt) to spread out values near zero
-    // This helps distinguish intermediate values from the neutral zero
-    // We clamp the input to the range first to avoid sqrt of large numbers dominating
-    float normalized = clamp(val_centered / half_range, -1.0, 1.0);
-    float norm_signed = sign(normalized) * sqrt(abs(normalized));
+    float scale_factor = 300.0; // Speed/Cost at which we reach ~76% saturation
+    float normalized = tanh(val_centered / scale_factor);
     
-    // Map [-1, 1] to [0, 1]
-    fragValue = norm_signed * 0.5 + 0.5;
+    // Map [-1, 1] from tanh to [0, 1] for the fragment shader
+    fragValue = normalized * 0.5 + 0.5;
 }

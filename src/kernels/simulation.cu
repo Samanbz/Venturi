@@ -296,24 +296,16 @@ __global__ void reduceBoundariesAtomicKernel(
         atomicMaxFloat(&output[1], val_y);
         atomicMinFloat(&output[2], val_x);
         atomicMaxFloat(&output[3], val_x);
-        atomicAdd(&output[4], val_c);
-    }
-}
 
-__global__ void reduceBoundariesSqSumAtomicKernel(const float* c,
-                                                  float* output,
-                                                  float mean,
-                                                  int n) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n) {
-        float diff = c[i] - mean;
-        atomicAdd(&output[5], diff * diff);
+        // Track absolute range max for color
+        float abs_c = fabsf(val_c);
+        atomicMaxFloat(&output[5], abs_c);
     }
 }
 
 Boundaries launchComputeBoundaries(
     const float* d_x, const float* d_y, const float* d_c, float* d_buffer, int num_agents) {
-    // Initialize buffer: [min_y, max_y, min_x, max_x, sum_c, sq_sum_c]
+    // Initialize buffer: [min_y, max_y, min_x, max_x, unused, max_abs_c]
     float init_vals[6] = {1e30f, -1e30f, 1e30f, -1e30f, 0.0f, 0.0f};
     cudaMemcpy(d_buffer, init_vals, 6 * sizeof(float), cudaMemcpyHostToDevice);
 
@@ -329,19 +321,13 @@ Boundaries launchComputeBoundaries(
     float max_y = h_buffer[1];
     float min_x = h_buffer[2];
     float max_x = h_buffer[3];
-    float mean_c = h_buffer[4] / num_agents;
 
-    // Second pass for stddev
-    cudaMemset(&d_buffer[5], 0, sizeof(float));
-    reduceBoundariesSqSumAtomicKernel<<<numBlocks, blockSize>>>(d_c, d_buffer, mean_c, num_agents);
+    // Use the absolute max found to create a symmetric range [-max, max]
+    float max_abs_c = h_buffer[5];
 
-    float sq_sum_c;
-    cudaMemcpy(&sq_sum_c, &d_buffer[5], sizeof(float), cudaMemcpyDeviceToHost);
-
-    float stddev_c = sqrtf(sq_sum_c / num_agents);
-    float limit = fmaxf(fabsf(mean_c - 2.0f * stddev_c), fabsf(mean_c + 2.0f * stddev_c));
-    if (limit < 0.001f)
-        limit = 1.0f;
+    float limit = max_abs_c;
+    if (limit < 5.0f)
+        limit = 5.0f;  // Minimum scale
 
     return {min_y, max_y, min_x, max_x, -limit, limit};
 }
