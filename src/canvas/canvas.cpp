@@ -45,10 +45,12 @@ Canvas::~Canvas() {
     vkDestroyPipelineLayout(device_, copyPipelineLayout, nullptr);
 
     vkDestroyRenderPass(device_, offscreenRenderPass, nullptr);
-    vkDestroyFramebuffer(device_, offscreenFramebuffer, nullptr);
-    vkDestroyImageView(device_, offscreenImageView, nullptr);
-    vkDestroyImage(device_, offscreenImage, nullptr);
-    vkFreeMemory(device_, offscreenImageMemory, nullptr);
+    for (int i = 0; i < 2; i++) {
+        vkDestroyFramebuffer(device_, offscreenFramebuffers[i], nullptr);
+        vkDestroyImageView(device_, offscreenImageViews[i], nullptr);
+        vkDestroyImage(device_, offscreenImages[i], nullptr);
+        vkFreeMemory(device_, offscreenImageMemories[i], nullptr);
+    }
     vkDestroySampler(device_, textureSampler, nullptr);
 
     vkDestroyDescriptorPool(device_, descriptorPool, nullptr);
@@ -472,12 +474,13 @@ void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer,
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-    // Transition Offscreen Image
+    uint32_t currIndex = currentTrailIndex;
+
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    barrier.image = offscreenImage;
+    barrier.image = offscreenImages[currIndex];
     barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
     barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
@@ -489,7 +492,7 @@ void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer,
     VkRenderPassBeginInfo offscreenInfo{};
     offscreenInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     offscreenInfo.renderPass = offscreenRenderPass;
-    offscreenInfo.framebuffer = offscreenFramebuffer;
+    offscreenInfo.framebuffer = offscreenFramebuffers[currIndex];
     offscreenInfo.renderArea.extent = extent;
     vkCmdBeginRenderPass(commandBuffer, &offscreenInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -500,9 +503,24 @@ void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer,
 
     // Fade
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, fadePipeline);
-    float fadeRate = 0.05f;
-    vkCmdPushConstants(commandBuffer, fadePipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                       sizeof(float), &fadeRate);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, fadePipelineLayout, 0,
+                            1, &descriptorSets[currIndex], 0, nullptr);
+
+    float prevW = prevMaxX - prevMinX;
+    float prevH = prevMaxY - prevMinY;
+    if (std::abs(prevW) < 1e-5f)
+        prevW = 1.0f;
+    if (std::abs(prevH) < 1e-5f)
+        prevH = 1.0f;
+
+    PushConstants fadePush{};
+    fadePush.scale = {(maxX - minX) / prevW, (maxY - minY) / prevH};
+    fadePush.offset = {(minX - prevMinX) / prevW, (prevMaxY - maxY) / prevH};
+    fadePush.fadeRate = 0.07f;
+
+    vkCmdPushConstants(commandBuffer, fadePipelineLayout,
+                       VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, 0,
+                       sizeof(PushConstants), &fadePush);
     vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
     // Points (trail)
@@ -511,7 +529,7 @@ void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer,
     push.p = glm::ortho(minX, maxX, maxY, minY, -1.0f, 1.0f);
     push.minC = minColor;
     push.maxC = maxColor;
-    push.w = 0.5f;
+    push.w = 0.05f;
     vkCmdPushConstants(commandBuffer, pipelineLayout,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        sizeof(PushConstants), &push);
@@ -522,6 +540,15 @@ void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer,
     vkCmdDraw(commandBuffer, static_cast<uint32_t>(bufferSize), 1, 0, 0);
 
     vkCmdEndRenderPass(commandBuffer);
+
+    // Transition back to Read Only
+    barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                         &barrier);
 
     // Pass 2: Final
     VkRenderPassBeginInfo finalInfo{};
@@ -537,8 +564,10 @@ void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer,
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, copyPipeline);
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+    // Bind the set that reads the image we JUST wrote to (currIndex)
+    // The set that reads 'currIndex' is 'currIndex+1' (mod 2).
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, copyPipelineLayout, 0,
-                            1, &descriptorSet, 0, nullptr);
+                            1, &descriptorSets[(currIndex + 1) % 2], 0, nullptr);
     vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
     // Points (Live)
@@ -555,6 +584,12 @@ void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer,
     if (endCommandBuffer) {
         vkEndCommandBuffer(commandBuffer);
     }
+
+    prevMinX = minX;
+    prevMaxX = maxX;
+    prevMinY = minY;
+    prevMaxY = maxY;
+    currentTrailIndex = (currentTrailIndex + 1) % 2;
 }
 
 void Canvas::createOffscreenRenderPass() {
@@ -610,21 +645,6 @@ void Canvas::createOffscreenResources() {
                       VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 
-    vkCreateImage(device_, &imageInfo, nullptr, &offscreenImage);
-
-    VkMemoryRequirements memReq;
-    vkGetImageMemoryRequirements(device_, offscreenImage, &memReq);
-
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memReq.size;
-    allocInfo.memoryTypeIndex =
-        findMemoryType(memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-    vkAllocateMemory(device_, &allocInfo, nullptr, &offscreenImageMemory);
-    vkBindImageMemory(device_, offscreenImage, offscreenImageMemory, 0);
-
-    // Initial clear to black using a temporary command buffer
     VkCommandBuffer cb;
     VkCommandBufferAllocateInfo allocCmdInfo{};
     allocCmdInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -638,28 +658,64 @@ void Canvas::createOffscreenResources() {
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(cb, &beginInfo);
 
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.image = offscreenImage;
-    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    barrier.srcAccessMask = 0;
-    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
-                         0, nullptr, 0, nullptr, 1, &barrier);
+    for (int i = 0; i < 2; i++) {
+        vkCreateImage(device_, &imageInfo, nullptr, &offscreenImages[i]);
 
-    VkClearColorValue clearColor = {0.0f, 0.0f, 0.0f, 0.0f};
-    VkImageSubresourceRange subRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    vkCmdClearColorImage(cb, offscreenImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearColor, 1,
-                         &subRange);
+        VkMemoryRequirements memReq;
+        vkGetImageMemoryRequirements(device_, offscreenImages[i], &memReq);
 
-    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memReq.size;
+        allocInfo.memoryTypeIndex =
+            findMemoryType(memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        vkAllocateMemory(device_, &allocInfo, nullptr, &offscreenImageMemories[i]);
+        vkBindImageMemory(device_, offscreenImages[i], offscreenImageMemories[i], 0);
+
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.image = offscreenImages[i];
+        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+        VkClearColorValue clearColor = {0.0f, 0.0f, 0.0f, 0.0f};
+        VkImageSubresourceRange subRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        vkCmdClearColorImage(cb, offscreenImages[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                             &clearColor, 1, &subRange);
+
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                             &barrier);
+
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = offscreenImages[i];
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        vkCreateImageView(device_, &viewInfo, nullptr, &offscreenImageViews[i]);
+
+        VkImageView attachments[] = {offscreenImageViews[i]};
+        VkFramebufferCreateInfo fbInfo{};
+        fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fbInfo.renderPass = offscreenRenderPass;
+        fbInfo.attachmentCount = 1;
+        fbInfo.pAttachments = attachments;
+        fbInfo.width = width_;
+        fbInfo.height = height_;
+        fbInfo.layers = 1;
+        vkCreateFramebuffer(device_, &fbInfo, nullptr, &offscreenFramebuffers[i]);
+    }
 
     vkEndCommandBuffer(cb);
 
@@ -671,25 +727,6 @@ void Canvas::createOffscreenResources() {
     vkQueueSubmit(graphicsQueue_, 1, &submitInfo, VK_NULL_HANDLE);
     vkQueueWaitIdle(graphicsQueue_);
     vkFreeCommandBuffers(device_, commandPool, 1, &cb);
-
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image = offscreenImage;
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT;
-    viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    vkCreateImageView(device_, &viewInfo, nullptr, &offscreenImageView);
-
-    VkImageView attachments[] = {offscreenImageView};
-    VkFramebufferCreateInfo fbInfo{};
-    fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    fbInfo.renderPass = offscreenRenderPass;
-    fbInfo.attachmentCount = 1;
-    fbInfo.pAttachments = attachments;
-    fbInfo.width = width_;
-    fbInfo.height = height_;
-    fbInfo.layers = 1;
-    vkCreateFramebuffer(device_, &fbInfo, nullptr, &offscreenFramebuffer);
 }
 
 void Canvas::createTextureSampler() {
@@ -725,38 +762,46 @@ void Canvas::createDescriptorSetLayout() {
 void Canvas::createDescriptorPool() {
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 1;
+    poolSize.descriptorCount = 2;
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = 1;
+    poolInfo.maxSets = 2;
     vkCreateDescriptorPool(device_, &poolInfo, nullptr, &descriptorPool);
 }
 
 void Canvas::createDescriptorSet() {
+    std::vector<VkDescriptorSetLayout> layouts(2, descriptorSetLayout);
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = descriptorPool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &descriptorSetLayout;
-    vkAllocateDescriptorSets(device_, &allocInfo, &descriptorSet);
+    allocInfo.descriptorSetCount = 2;
+    allocInfo.pSetLayouts = layouts.data();
 
-    VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfo.imageView = offscreenImageView;
-    imageInfo.sampler = textureSampler;
+    // Allocate 2 sets
+    if (vkAllocateDescriptorSets(device_, &allocInfo, descriptorSets) != VK_SUCCESS) {
+        throw std::runtime_error("failed to allocate descriptor sets!");
+    }
 
-    VkWriteDescriptorSet descriptorWrite{};
-    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = descriptorSet;
-    descriptorWrite.dstBinding = 0;
-    descriptorWrite.dstArrayElement = 0;
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorWrite.descriptorCount = 1;
-    descriptorWrite.pImageInfo = &imageInfo;
+    for (int i = 0; i < 2; i++) {
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        // i=0 reads from 1, i=1 reads from 0
+        imageInfo.imageView = offscreenImageViews[(i + 1) % 2];
+        imageInfo.sampler = textureSampler;
 
-    vkUpdateDescriptorSets(device_, 1, &descriptorWrite, 0, nullptr);
+        VkWriteDescriptorSet descriptorWrite{};
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = descriptorSets[i];
+        descriptorWrite.dstBinding = 0;
+        descriptorWrite.dstArrayElement = 0;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.pImageInfo = &imageInfo;
+
+        vkUpdateDescriptorSets(device_, 1, &descriptorWrite, 0, nullptr);
+    }
 }
 
 void Canvas::createGraphicsPipeline() {
@@ -821,7 +866,7 @@ void Canvas::createGraphicsPipeline() {
     VkPipelineColorBlendAttachmentState blendAtt{};
     blendAtt.blendEnable = VK_TRUE;
     blendAtt.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    blendAtt.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAtt.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
     blendAtt.colorBlendOp = VK_BLEND_OP_ADD;
     blendAtt.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
     blendAtt.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
@@ -873,6 +918,7 @@ void Canvas::createGraphicsPipeline() {
                               &offscreenGraphicsPipeline);
 
     pipeInfo.renderPass = renderPass;
+    blendAtt.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
     vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipeInfo, nullptr, &graphicsPipeline);
 
     vkDestroyShaderModule(device_, vertModule, nullptr);
@@ -984,8 +1030,8 @@ void Canvas::createCopyPipeline() {
 }
 
 void Canvas::createFadePipeline() {
-    auto vertCode = readFile("shaders/quad.spv");
-    auto fragCode = readFile("shaders/fade.spv");
+    auto vertCode = readFile("shaders/fade.vert.spv");
+    auto fragCode = readFile("shaders/fade.frag.spv");
     VkShaderModule v = createShaderModule(vertCode);
     VkShaderModule f = createShaderModule(fragCode);
 
@@ -1040,13 +1086,7 @@ void Canvas::createFadePipeline() {
     // Src color (RGB) is ignored (Multiplied by ZERO).
     // Src Alpha determines how much of Dst is kept.
     VkPipelineColorBlendAttachmentState ba{};
-    ba.blendEnable = VK_TRUE;
-    ba.srcColorBlendFactor = VK_BLEND_FACTOR_ZERO;
-    ba.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    ba.colorBlendOp = VK_BLEND_OP_ADD;
-    ba.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    ba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    ba.alphaBlendOp = VK_BLEND_OP_ADD;
+    ba.blendEnable = VK_FALSE;
     ba.colorWriteMask = 0xF;
 
     VkPipelineColorBlendStateCreateInfo cb{};
@@ -1063,12 +1103,14 @@ void Canvas::createFadePipeline() {
     dyn.pDynamicStates = ds.data();
 
     VkPushConstantRange pc{};
-    pc.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    pc.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pc.offset = 0;
-    pc.size = sizeof(float);
+    pc.size = sizeof(PushConstants);
 
     VkPipelineLayoutCreateInfo pl{};
     pl.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pl.setLayoutCount = 1;
+    pl.pSetLayouts = &descriptorSetLayout;
     pl.pushConstantRangeCount = 1;
     pl.pPushConstantRanges = &pc;
 

@@ -26,10 +26,14 @@
  * @brief Push constants used in shaders for coordinate transformation and coloration.
  */
 struct PushConstants {
-    glm::mat4 p;  ///< Projection matrix (Ortho)
-    float minC;   ///< Minimum color value range
-    float maxC;   ///< Maximum color value range
-    float w;      ///< Point weight/size or interpolation factor
+    glm::mat4 p;       ///< Projection matrix (Ortho)
+    float minC;        ///< Minimum color value range
+    float maxC;        ///< Maximum color value range
+    float w;           ///< Point weight/size or interpolation factor
+    float pad;         ///< Alignment pad
+    glm::vec2 scale;   ///< Reprojection scale
+    glm::vec2 offset;  ///< Reprojection offset
+    float fadeRate;    ///< Fade rate
 };
 
 /**
@@ -180,11 +184,11 @@ class Canvas {
     VkFence inFlightFence;
 
     // Offscreen Trail Effect Resources (Common)
-    VkImage offscreenImage;
-    VkDeviceMemory offscreenImageMemory;
-    VkImageView offscreenImageView;
+    VkImage offscreenImages[2];
+    VkDeviceMemory offscreenImageMemories[2];
+    VkImageView offscreenImageViews[2];
     VkRenderPass offscreenRenderPass;
-    VkFramebuffer offscreenFramebuffer;
+    VkFramebuffer offscreenFramebuffers[2];
 
     VkPipeline fadePipeline;
     VkPipelineLayout fadePipelineLayout;
@@ -194,15 +198,21 @@ class Canvas {
 
     VkDescriptorSetLayout descriptorSetLayout;
     VkDescriptorPool descriptorPool;
-    VkDescriptorSet descriptorSet;
+    VkDescriptorSet descriptorSets[2];  // Set 0 reads [1], Set 1 reads [0]
     VkSampler textureSampler;
 
     // Camera Boundaries
     float minX = 0.0f, maxX = 1.0f;
     float minY = 0.0f, maxY = 1.0f;
+    float minColor = 0.0f, maxColor = 1.0f;
+
+    // Previous frame boundaries for reprojection
+    float prevMinX = 0.0f, prevMaxX = 1.0f;
+    float prevMinY = 0.0f, prevMaxY = 1.0f;
+    uint32_t currentTrailIndex = 0;
+
     float targetMinX = 0.0f, targetMaxX = 1.0f;
     float targetMinY = 0.0f, targetMaxY = 1.0f;
-    float minColor = 0.0f, maxColor = 1.0f;
     float targetMinColor = 0.0f, targetMaxColor = 1.0f;
 
     // Format decided by subclass

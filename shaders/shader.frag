@@ -36,5 +36,6 @@ void main() {
     float t = clamp(fragValue, 0.0, 1.0);
     
     vec3 color = cold_hot(t);
-    outColor = vec4(color * push.trailWeight, 0.3);
+    // Translucent points (use trailWeight/w from push constant)
+    outColor = vec4(color, push.trailWeight);
 }
