@@ -7,11 +7,12 @@ struct MarketState {
     float price;     // S_t, current asset price
     float pressure;  // mu_t, current market pressure
 
-    float* d_inventory = nullptr;       // Q_t^a, agent inventories
-    float* d_cash = nullptr;            // X_t^a, agent cash balances
-    float* d_execution_cost = nullptr;  // \delta_t^a, agent execution costs
-    float* d_risk_aversion = nullptr;   // phi^a, agent risk aversion parameters
-    float* d_local_density = nullptr;   // rho_t^a, agent local densities
+    float* d_inventory = nullptr;         // Q_t^a, agent inventories
+    float* d_cash = nullptr;              // X_t^a, agent cash balances
+    float* d_execution_cost = nullptr;    // \delta_t^a, agent execution costs
+    float* d_risk_aversion = nullptr;     // phi^a, agent risk aversion parameters
+    float* d_local_density = nullptr;     // rho_t^a, agent local densities
+    float* d_target_inventory = nullptr;  // Target inventory for each agent
 
     float* d_speed_term_1 = nullptr;
     float* d_speed_term_2 = nullptr;
@@ -48,6 +49,9 @@ struct MarketParams {
     float decay_rate;   // decay rate for inventory initialization
     float risk_mean;    // mean for risk aversion initialization
     float risk_stddev;  // standard deviation for risk aversion initialization
+
+    float target_inventory_mean;    // mean for target inventory initialization
+    float target_inventory_stddev;  // standard deviation for target inventory initialization
 };
 
 struct Boundaries {

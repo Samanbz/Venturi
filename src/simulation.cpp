@@ -89,6 +89,7 @@ Simulation::Simulation(const MarketParams& params,
     // Allocate sorted arrays and intermediate buffers
     cudaMalloc(&state_.d_speed_term_1, size);
     cudaMalloc(&state_.d_speed_term_2, size);
+    cudaMalloc(&state_.d_target_inventory, size);
 
     cudaMalloc(&state_.d_rngStates, params.num_agents * sizeof(curandState));
 
@@ -112,6 +113,10 @@ Simulation::Simulation(const MarketParams& params,
     // Initialize from log-normal to avoid negative values leading to NaNs later
     launchInitializeLogNormal(state_.d_risk_aversion, params.risk_mean, params.risk_stddev,
                               state_.d_rngStates, params.num_agents);
+
+    // Initialize target inventory
+    launchInitializeNormal(state_.d_target_inventory, params.target_inventory_mean,
+                           params.target_inventory_stddev, state_.d_rngStates, params.num_agents);
 
     // Initialize others to 0
     if (state_.d_cash != vk_X && state_.d_cash != vk_Y)
@@ -176,7 +181,8 @@ void Simulation::computeLocalDensities() {
 
 void Simulation::computePressure() {
     launchComputeSpeedTerms(state_.d_risk_aversion, state_.d_local_density, state_.d_inventory,
-                            state_.d_speed_term_1, state_.d_speed_term_2, state_.dt, params_);
+                            state_.d_target_inventory, state_.d_speed_term_1, state_.d_speed_term_2,
+                            state_.dt, params_);
 
     // Compute the pressure based on the speed terms
     launchComputePressure(state_.d_speed_term_1, state_.d_speed_term_2, state_.d_pressure_buffer,
@@ -188,7 +194,8 @@ void Simulation::updateAgentState() {
     // pressure
     launchUpdateAgentState(state_.d_speed_term_1, state_.d_speed_term_2, state_.d_local_density,
                            state_.d_agent_next, state_.pressure, state_.d_speed, state_.d_inventory,
-                           state_.d_execution_cost, state_.d_cash, state_.price, params_);
+                           state_.d_target_inventory, state_.d_execution_cost, state_.d_cash,
+                           state_.price, params_);
 }
 
 void Simulation::updatePrice() {
@@ -234,6 +241,7 @@ Simulation::~Simulation() {
 
     safeFree(state_.d_inventory);
     safeFree(state_.d_execution_cost);
+    safeFree(state_.d_target_inventory);
     safeFree(state_.d_cash);
     safeFree(state_.d_speed);
     safeFree(state_.d_local_density);

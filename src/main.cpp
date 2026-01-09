@@ -20,11 +20,11 @@ static void printBoundaries(const Boundaries& boundaries) {
 int main(int argc, char** argv) {
     bool offlineMode = false;
     std::string outputDir = "output";
-    int numFrames = 1200;   // Default 40 seconds at 30fps
+    int numFrames = 5000;   // Default 40 seconds at 30fps
     int numAgents = 50000;  // Default
     int width = 0;
     int height = 0;
-    int stepsPerFrame = 3;  // Default
+    int stepsPerFrame = 4;  // Default
 
     // Simple argument parsing
     for (int i = 1; i < argc; ++i) {
@@ -56,11 +56,11 @@ int main(int argc, char** argv) {
 
     params.time_delta = 1.0f / 30.0f;
     params.price_init = 100.0f;
-    params.price_randomness_stddev = 1.0f;
+    params.price_randomness_stddev = 2.0f;
     params.permanent_impact = 1e-6f;
     params.temporary_impact = 0.05f;
     params.sph_smoothing_radius = 1.0f;
-    params.congestion_sensitivity = 0.09f;
+    params.congestion_sensitivity = 0.05f;
     int power = 1;
     while ((1 << power) < params.num_agents) {
         power++;
@@ -68,9 +68,11 @@ int main(int argc, char** argv) {
     params.hash_table_size = (1 << (power + 1));
     params.decay_rate = 1e-4f;
     params.mass_alpha = 0.001f;
-    params.mass_beta = 0.09f;
-    params.risk_mean = 0.001f;
-    params.risk_stddev = 2.0f;
+    params.mass_beta = 0.3f;
+    params.risk_mean = 0.01f;
+    params.risk_stddev = 1.0f;
+    params.target_inventory_mean = 0.0f;
+    params.target_inventory_stddev = 1e4f;
 
     std::unique_ptr<Canvas> canvas;
 

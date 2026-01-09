@@ -26,6 +26,9 @@ class SpeedPressureFixture : public BaseTestFixture {
         cudaMalloc(&d_agent_indices, params.num_agents * sizeof(int));
         cudaMalloc(&d_pressure_buffer, 2 * sizeof(float));
 
+        cudaMalloc(&d_target_inventory, size);
+        cudaMemset(d_target_inventory, 0, size);
+
         // Initialize identity mapping for indices
         std::vector<int> h_indices(params.num_agents);
         std::iota(h_indices.begin(), h_indices.end(), 0);
@@ -52,6 +55,7 @@ class SpeedPressureFixture : public BaseTestFixture {
         cudaFree(d_cash);
         cudaFree(d_pressure_buffer);
         cudaFree(d_agent_indices);
+        cudaFree(d_target_inventory);
     }
 
     void copyToDevice() {
@@ -79,6 +83,7 @@ class SpeedPressureFixture : public BaseTestFixture {
     float* d_execution_cost = nullptr;
     float* d_cash = nullptr;
     int* d_agent_indices = nullptr;
+    float* d_target_inventory = nullptr;
     float* d_pressure_buffer = nullptr;
 
     std::vector<float> h_inventory;
@@ -104,16 +109,16 @@ TEST_F(SpeedPressureFixture, PressureConsistency) {
     copyToDevice();
 
     int dt = 0;
-    launchComputeSpeedTerms(d_risk_aversion, d_local_density, d_inventory, d_speed_term_1,
-                            d_speed_term_2, dt, params);
+    launchComputeSpeedTerms(d_risk_aversion, d_local_density, d_inventory, d_target_inventory,
+                            d_speed_term_1, d_speed_term_2, dt, params);
 
     float pressure = 0.0f;
     launchComputePressure(d_speed_term_1, d_speed_term_2, d_pressure_buffer, &pressure,
                           params.num_agents);
 
     launchUpdateAgentState(d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices,
-                           pressure, d_speed, d_inventory, d_execution_cost, d_cash, 100.0f,
-                           params);
+                           pressure, d_speed, d_inventory, d_target_inventory, d_execution_cost,
+                           d_cash, 100.0f, params);
     cudaDeviceSynchronize();
 
     copyFromDevice();
@@ -146,16 +151,16 @@ TEST_F(SpeedPressureFixture, NumericalAccuracy) {
     copyToDevice();
 
     int dt = 5;
-    launchComputeSpeedTerms(d_risk_aversion, d_local_density, d_inventory, d_speed_term_1,
-                            d_speed_term_2, dt, params);
+    launchComputeSpeedTerms(d_risk_aversion, d_local_density, d_inventory, d_target_inventory,
+                            d_speed_term_1, d_speed_term_2, dt, params);
 
     float gpu_pressure = 0.0f;
     launchComputePressure(d_speed_term_1, d_speed_term_2, d_pressure_buffer, &gpu_pressure,
                           params.num_agents);
 
     launchUpdateAgentState(d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices,
-                           gpu_pressure, d_speed, d_inventory, d_execution_cost, d_cash, 100.0f,
-                           params);
+                           gpu_pressure, d_speed, d_inventory, d_target_inventory, d_execution_cost,
+                           d_cash, 100.0f, params);
     cudaDeviceSynchronize();
 
     copyFromDevice();
@@ -219,15 +224,15 @@ TEST_F(SpeedPressureFixture, BoundaryConditions_ZeroDensity) {
     copyToDevice();
 
     int dt = 0;
-    launchComputeSpeedTerms(d_risk_aversion, d_local_density, d_inventory, d_speed_term_1,
-                            d_speed_term_2, dt, params);
+    launchComputeSpeedTerms(d_risk_aversion, d_local_density, d_inventory, d_target_inventory,
+                            d_speed_term_1, d_speed_term_2, dt, params);
 
     float pressure = 0.0f;
     launchComputePressure(d_speed_term_1, d_speed_term_2, d_pressure_buffer, &pressure,
                           params.num_agents);
     launchUpdateAgentState(d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices,
-                           pressure, d_speed, d_inventory, d_execution_cost, d_cash, 100.0f,
-                           params);
+                           pressure, d_speed, d_inventory, d_target_inventory, d_execution_cost,
+                           d_cash, 100.0f, params);
     cudaDeviceSynchronize();
 
     copyFromDevice();
@@ -254,15 +259,15 @@ TEST_F(SpeedPressureFixture, BoundaryConditions_TimeMaturity) {
 
     // Set dt to final step
     int dt = params.num_steps;
-    launchComputeSpeedTerms(d_risk_aversion, d_local_density, d_inventory, d_speed_term_1,
-                            d_speed_term_2, dt, params);
+    launchComputeSpeedTerms(d_risk_aversion, d_local_density, d_inventory, d_target_inventory,
+                            d_speed_term_1, d_speed_term_2, dt, params);
 
     float pressure = 0.0f;
     launchComputePressure(d_speed_term_1, d_speed_term_2, d_pressure_buffer, &pressure,
                           params.num_agents);
     launchUpdateAgentState(d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices,
-                           pressure, d_speed, d_inventory, d_execution_cost, d_cash, 100.0f,
-                           params);
+                           pressure, d_speed, d_inventory, d_target_inventory, d_execution_cost,
+                           d_cash, 100.0f, params);
     cudaDeviceSynchronize();
 
     copyFromDevice();

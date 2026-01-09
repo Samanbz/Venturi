@@ -33,6 +33,9 @@ class UpdateLogicFixture : public BaseTestFixture {
         cudaMalloc(&d_agent_indices, params.num_agents * sizeof(int));
         cudaMalloc(&d_pressure_buffer, 2 * sizeof(float));
 
+        cudaMalloc(&d_target_inventory, size);
+        cudaMemset(d_target_inventory, 0, size);
+
         // Initialize identity mapping for indices
         std::vector<int> h_indices(params.num_agents);
         std::iota(h_indices.begin(), h_indices.end(), 0);
@@ -70,6 +73,8 @@ class UpdateLogicFixture : public BaseTestFixture {
             cudaFree(d_agent_indices);
         if (d_pressure_buffer)
             cudaFree(d_pressure_buffer);
+        if (d_target_inventory)
+            cudaFree(d_target_inventory);
     }
 
     void copyToDevice() {
@@ -100,6 +105,7 @@ class UpdateLogicFixture : public BaseTestFixture {
     float* d_cash = nullptr;
     int* d_agent_indices = nullptr;
     float* d_pressure_buffer = nullptr;
+    float* d_target_inventory = nullptr;
 
     std::vector<float> h_inventory;
     std::vector<float> h_risk_aversion;
@@ -145,8 +151,8 @@ TEST_F(UpdateLogicFixture, InventoryDirectionalityAndIntegration) {
 
     // Calculate speed terms
     int dt = 0;
-    launchComputeSpeedTerms(d_risk_aversion, d_local_density, d_inventory, d_speed_term_1,
-                            d_speed_term_2, dt, params);
+    launchComputeSpeedTerms(d_risk_aversion, d_local_density, d_inventory, d_target_inventory,
+                            d_speed_term_1, d_speed_term_2, dt, params);
 
     // Calculate pressure
     float pressure = 0.0f;
@@ -155,8 +161,8 @@ TEST_F(UpdateLogicFixture, InventoryDirectionalityAndIntegration) {
 
     // Update
     launchUpdateAgentState(d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices,
-                           pressure, d_speed, d_inventory, d_execution_cost, d_cash, 100.0f,
-                           params);
+                           pressure, d_speed, d_inventory, d_target_inventory, d_execution_cost,
+                           d_cash, 100.0f, params);
     cudaDeviceSynchronize();
 
     // Backup old inventory
@@ -252,15 +258,15 @@ TEST_F(UpdateLogicFixture, ExecutionCostScaling) {
     copyToDevice();
 
     int dt = 0;
-    launchComputeSpeedTerms(d_risk_aversion, d_local_density, d_inventory, d_speed_term_1,
-                            d_speed_term_2, dt, params);
+    launchComputeSpeedTerms(d_risk_aversion, d_local_density, d_inventory, d_target_inventory,
+                            d_speed_term_1, d_speed_term_2, dt, params);
 
     // Force pressure to 0 to isolate term2
     float pressure = 0.0f;
 
     launchUpdateAgentState(d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices,
-                           pressure, d_speed, d_inventory, d_execution_cost, d_cash, 100.0f,
-                           params);
+                           pressure, d_speed, d_inventory, d_target_inventory, d_execution_cost,
+                           d_cash, 100.0f, params);
     cudaDeviceSynchronize();
 
     copyFromDevice();
@@ -341,8 +347,8 @@ TEST_F(UpdateLogicFixture, CashAccumulation) {
     // Or we can just let the kernel calculate speed and then verify cash based on that speed.
 
     int dt = 0;
-    launchComputeSpeedTerms(d_risk_aversion, d_local_density, d_inventory, d_speed_term_1,
-                            d_speed_term_2, dt, params);
+    launchComputeSpeedTerms(d_risk_aversion, d_local_density, d_inventory, d_target_inventory,
+                            d_speed_term_1, d_speed_term_2, dt, params);
 
     float pressure = 0.0f;  // Assume no pressure for simplicity, or calculate it.
     // If pressure is 0, speed = -term2.
@@ -350,7 +356,8 @@ TEST_F(UpdateLogicFixture, CashAccumulation) {
     float price = 100.0f;
 
     launchUpdateAgentState(d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices,
-                           pressure, d_speed, d_inventory, d_execution_cost, d_cash, price, params);
+                           pressure, d_speed, d_inventory, d_target_inventory, d_execution_cost,
+                           d_cash, price, params);
 
     cudaDeviceSynchronize();
     copyFromDevice();
