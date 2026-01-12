@@ -13,6 +13,8 @@ struct MarketState {
     float* d_risk_aversion = nullptr;     // phi^a, agent risk aversion parameters
     float* d_local_density = nullptr;     // rho_t^a, agent local densities
     float* d_target_inventory = nullptr;  // Target inventory for each agent
+    float* d_greed = nullptr;             // Greed factor for each agent
+    float* d_belief = nullptr;            // Belief about price trend for each agent
 
     float* d_speed_term_1 = nullptr;
     float* d_speed_term_2 = nullptr;
@@ -32,6 +34,8 @@ struct MarketState {
     // Market State History (Host pointers)
     float* price_history = nullptr;     // Ring buffer for past prices
     float* pressure_history = nullptr;  // Ring buffer for past pressures
+
+    float last_price;  // Price at previous step (for belief updates)
 };
 
 struct MarketParams {
@@ -59,6 +63,10 @@ struct MarketParams {
     float decay_rate;   // decay rate for inventory initialization
     float risk_mean;    // mean for risk aversion initialization
     float risk_stddev;  // standard deviation for risk aversion initialization
+
+    float greed_mean;    // mean for greed initialization
+    float greed_stddev;  // standard deviation for greed initialization
+    float trend_decay;   // decay factor for belief update (trend following)
 
     float target_inventory_mean;    // mean for target inventory initialization
     float target_inventory_stddev;  // standard deviation for target inventory initialization

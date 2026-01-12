@@ -81,10 +81,13 @@ int main(int argc, char** argv) {
     params.decay_rate = 1e-4f;
     params.mass_alpha = 0.001f;
     params.mass_beta = 0.3f;
-    params.risk_mean = 0.01f;
+    params.risk_mean = 0.1f;
     params.risk_stddev = 1.0f;
+    params.greed_mean = 1.0f;
+    params.greed_stddev = 5.5f;
+    params.trend_decay = 0.5f;
     params.target_inventory_mean = 0.0f;
-    params.target_inventory_stddev = 1e4f;
+    params.target_inventory_stddev = 1e3f;
 
     std::unique_ptr<Canvas> canvas;
 
@@ -123,7 +126,9 @@ int main(int argc, char** argv) {
     // Initial boundary setup
     Boundaries boundaries = sim.getBoundaries();
     printBoundaries(boundaries);
-    canvas->setBoundaries(boundaries, 0.1f, 0.1f, true);
+    // Use zoom = 1.0f (exact fit) or adjusts as needed. previous -2.0 padding was
+    // confusing/inverted.
+    canvas->setBoundaries(boundaries, 1.0f, 1.0f, true);
 
     // Run the loop
     canvas->run(sim);

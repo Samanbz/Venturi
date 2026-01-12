@@ -90,6 +90,8 @@ Simulation::Simulation(const MarketParams& params,
     cudaMalloc(&state_.d_speed_term_1, size);
     cudaMalloc(&state_.d_speed_term_2, size);
     cudaMalloc(&state_.d_target_inventory, size);
+    cudaMalloc(&state_.d_greed, size);
+    cudaMalloc(&state_.d_belief, size);
 
     cudaMalloc(&state_.d_rngStates, params.num_agents * sizeof(curandState));
 
@@ -123,6 +125,11 @@ Simulation::Simulation(const MarketParams& params,
     // Initialize from log-normal to avoid negative values leading to NaNs later
     launchInitializeLogNormal(state_.d_risk_aversion, params.risk_mean, params.risk_stddev,
                               state_.d_rngStates, params.num_agents);
+
+    launchInitializeLogNormal(state_.d_greed, params.greed_mean, params.greed_stddev,
+                              state_.d_rngStates, params.num_agents);
+    cudaMemset(state_.d_belief, 0, size);
+    state_.last_price = params.price_init;
 
     // Initialize target inventory
     launchInitializeNormal(state_.d_target_inventory, params.target_inventory_mean,
@@ -199,13 +206,14 @@ void Simulation::computePressure() {
                           &state_.pressure, params_.num_agents);
 }
 
-void Simulation::updateAgentState(float observed_pressure) {
+void Simulation::updateAgentState(float observed_pressure, float price_change) {
     // Compute the trading speed for each agent based on their risk aversion, local density, and
     // pressure
     launchUpdateAgentState(state_.d_speed_term_1, state_.d_speed_term_2, state_.d_local_density,
-                           state_.d_agent_next, observed_pressure, state_.d_speed,
-                           state_.d_inventory, state_.d_target_inventory, state_.d_execution_cost,
-                           state_.d_cash, state_.price, params_);
+                           state_.d_agent_next, observed_pressure, state_.d_greed, state_.d_belief,
+                           price_change, state_.d_speed, state_.d_inventory,
+                           state_.d_target_inventory, state_.d_execution_cost, state_.d_cash,
+                           state_.price, params_);
 }
 
 void Simulation::updatePrice() {
@@ -258,8 +266,13 @@ void Simulation::step(bool waitForRender, bool signalRender) {
         observed_pressure = state_.pressure_history[lookup_idx];
     }
 
-    updateAgentState(observed_pressure);
+    float current_price_start = state_.price;
+    float price_change = current_price_start - state_.last_price;
+
+    updateAgentState(observed_pressure, price_change);
     updatePrice();
+
+    state_.last_price = current_price_start;
 
     if (signalRender && cudaSignalSemaphore != nullptr) {
         cudaExternalSemaphoreSignalParams signalParams{};
@@ -288,6 +301,8 @@ Simulation::~Simulation() {
     safeFree(state_.d_cash);
     safeFree(state_.d_speed);
     safeFree(state_.d_local_density);
+    safeFree(state_.d_greed);
+    safeFree(state_.d_belief);
     safeFree(state_.d_risk_aversion);
 
     cudaFree(state_.d_rngStates);

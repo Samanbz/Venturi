@@ -20,6 +20,8 @@ struct SpeedPressureState : public BenchmarkState {
     float* d_cash = nullptr;
     int* d_agent_indices = nullptr;
     float* d_pressure_buffer = nullptr;
+    float* d_greed = nullptr;
+    float* d_belief = nullptr;
     curandState* d_rngStates = nullptr;
     MarketParams params{};
 
@@ -41,6 +43,11 @@ struct SpeedPressureState : public BenchmarkState {
         cudaMalloc(&d_pressure_buffer, 2 * sizeof(float));
         cudaMalloc(&d_rngStates, n * sizeof(curandState));
 
+        cudaMalloc(&d_greed, n * sizeof(float));
+        cudaMemset(d_greed, 0, n * sizeof(float));
+        cudaMalloc(&d_belief, n * sizeof(float));
+        cudaMemset(d_belief, 0, n * sizeof(float));
+
         // Initialize identity mapping for indices
         std::vector<int> h_indices(n);
         std::iota(h_indices.begin(), h_indices.end(), 0);
@@ -57,6 +64,10 @@ struct SpeedPressureState : public BenchmarkState {
         cudaFree(d_speed_term_1);
         cudaFree(d_speed_term_2);
         cudaFree(d_speed);
+        if (d_greed)
+            cudaFree(d_greed);
+        if (d_belief)
+            cudaFree(d_belief);
         cudaFree(d_execution_cost);
         cudaFree(d_cash);
         cudaFree(d_agent_indices);
@@ -128,7 +139,8 @@ BENCHMARK_DEFINE_F(SpeedPressureFixture, ComputeSpeed)(benchmark::State& state) 
     for (auto _ : state) {
         launchUpdateAgentState(g_state.d_speed_term_1, g_state.d_speed_term_2,
                                g_state.d_local_density, g_state.d_agent_indices, pressure,
-                               g_state.d_speed, g_state.d_inventory, g_state.d_target_inventory,
+                               g_state.d_greed, g_state.d_belief, 0.0f, g_state.d_speed,
+                               g_state.d_inventory, g_state.d_target_inventory,
                                g_state.d_execution_cost, g_state.d_cash, 100.0f, g_state.params);
         cudaDeviceSynchronize();
     }
@@ -147,7 +159,8 @@ BENCHMARK_DEFINE_F(SpeedPressureFixture, FullSpeedPressureStep)(benchmark::State
 
         launchUpdateAgentState(g_state.d_speed_term_1, g_state.d_speed_term_2,
                                g_state.d_local_density, g_state.d_agent_indices, pressure,
-                               g_state.d_speed, g_state.d_inventory, g_state.d_target_inventory,
+                               g_state.d_greed, g_state.d_belief, 0.0f, g_state.d_speed,
+                               g_state.d_inventory, g_state.d_target_inventory,
                                g_state.d_execution_cost, g_state.d_cash, 100.0f, g_state.params);
         cudaDeviceSynchronize();
     }

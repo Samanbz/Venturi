@@ -36,6 +36,11 @@ class UpdateLogicFixture : public BaseTestFixture {
         cudaMalloc(&d_target_inventory, size);
         cudaMemset(d_target_inventory, 0, size);
 
+        cudaMalloc(&d_greed, size);
+        cudaMemset(d_greed, 0, size);
+        cudaMalloc(&d_belief, size);
+        cudaMemset(d_belief, 0, size);
+
         // Initialize identity mapping for indices
         std::vector<int> h_indices(params.num_agents);
         std::iota(h_indices.begin(), h_indices.end(), 0);
@@ -75,6 +80,10 @@ class UpdateLogicFixture : public BaseTestFixture {
             cudaFree(d_pressure_buffer);
         if (d_target_inventory)
             cudaFree(d_target_inventory);
+        if (d_greed)
+            cudaFree(d_greed);
+        if (d_belief)
+            cudaFree(d_belief);
     }
 
     void copyToDevice() {
@@ -106,6 +115,8 @@ class UpdateLogicFixture : public BaseTestFixture {
     int* d_agent_indices = nullptr;
     float* d_pressure_buffer = nullptr;
     float* d_target_inventory = nullptr;
+    float* d_greed = nullptr;
+    float* d_belief = nullptr;
 
     std::vector<float> h_inventory;
     std::vector<float> h_risk_aversion;
@@ -161,8 +172,8 @@ TEST_F(UpdateLogicFixture, InventoryDirectionalityAndIntegration) {
 
     // Update
     launchUpdateAgentState(d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices,
-                           pressure, d_speed, d_inventory, d_target_inventory, d_execution_cost,
-                           d_cash, 100.0f, params);
+                           pressure, d_greed, d_belief, 0.0f, d_speed, d_inventory,
+                           d_target_inventory, d_execution_cost, d_cash, 100.0f, params);
     cudaDeviceSynchronize();
 
     // Backup old inventory
@@ -265,8 +276,8 @@ TEST_F(UpdateLogicFixture, ExecutionCostScaling) {
     float pressure = 0.0f;
 
     launchUpdateAgentState(d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices,
-                           pressure, d_speed, d_inventory, d_target_inventory, d_execution_cost,
-                           d_cash, 100.0f, params);
+                           pressure, d_greed, d_belief, 0.0f, d_speed, d_inventory,
+                           d_target_inventory, d_execution_cost, d_cash, 100.0f, params);
     cudaDeviceSynchronize();
 
     copyFromDevice();
@@ -356,8 +367,8 @@ TEST_F(UpdateLogicFixture, CashAccumulation) {
     float price = 100.0f;
 
     launchUpdateAgentState(d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices,
-                           pressure, d_speed, d_inventory, d_target_inventory, d_execution_cost,
-                           d_cash, price, params);
+                           pressure, d_greed, d_belief, 0.0f, d_speed, d_inventory,
+                           d_target_inventory, d_execution_cost, d_cash, price, params);
 
     cudaDeviceSynchronize();
     copyFromDevice();

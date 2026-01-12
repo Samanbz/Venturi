@@ -172,6 +172,9 @@ __global__ void updateAgentStateKernel(const float* __restrict__ speed_term_1,
                                        const float* __restrict__ local_density,
                                        const int* __restrict__ agent_indices,
                                        const float pressure,
+                                       const float* __restrict__ greed,
+                                       float* __restrict__ belief,
+                                       float price_change,
                                        float* __restrict__ speed,
                                        float* __restrict__ inventory,
                                        const float* __restrict__ target_inventory,
@@ -183,9 +186,18 @@ __global__ void updateAgentStateKernel(const float* __restrict__ speed_term_1,
     if (idx >= params.num_agents)
         return;
 
+    // Update Belief
+    float my_belief = belief[idx];
+    my_belief = params.trend_decay * my_belief + (1.0f - params.trend_decay) * price_change;
+    belief[idx] = my_belief;
+
     float local_temporary_impact =
         params.temporary_impact * (1 + params.congestion_sensitivity * local_density[idx]);
     speed[idx] = pressure * speed_term_1[idx] - speed_term_2[idx];
+
+    // Add Greed Term
+    // speed^a = speed^a + (greed^a * belief)/2*temporary_impact (Assuming local impact)
+    speed[idx] += (greed[idx] * my_belief) / (2.0f * local_temporary_impact);
 
     float new_inv = inventory[idx] + speed[idx] * params.time_delta;
     // Clamp based on direction relative to target
@@ -224,6 +236,9 @@ void launchUpdateAgentState(const float* d_speed_term_1,
                             const float* d_local_density,
                             const int* d_agent_indices,
                             float pressure,
+                            const float* d_greed,
+                            float* d_belief,
+                            float price_change,
                             float* d_speed,
                             float* d_inventory,
                             const float* d_target_inventory,
@@ -235,8 +250,9 @@ void launchUpdateAgentState(const float* d_speed_term_1,
     int numBlocks = (params.num_agents + blockSize - 1) / blockSize;
 
     updateAgentStateKernel<<<numBlocks, blockSize>>>(
-        d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices, pressure, d_speed,
-        d_inventory, d_target_inventory, d_execution_cost, d_cash, price, params);
+        d_speed_term_1, d_speed_term_2, d_local_density, d_agent_indices, pressure, d_greed,
+        d_belief, price_change, d_speed, d_inventory, d_target_inventory, d_execution_cost, d_cash,
+        price, params);
 }
 
 // Reduction Kernels

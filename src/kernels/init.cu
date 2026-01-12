@@ -120,7 +120,7 @@ __global__ void flipSignsKernel(float* data, int num_agents) {
         return;
 
     // Second half are buyers (negative inventory)
-    if (idx >= num_agents / 2) {
+    if (idx % 2 == 1) {
         data[idx] = -data[idx];
     }
 }

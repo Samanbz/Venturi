@@ -29,7 +29,7 @@ class Simulation {
     //    private:
     void computeLocalDensities();
     void computePressure();
-    void updateAgentState(float observed_pressure);
+    void updateAgentState(float observed_pressure, float price_change);
     void updatePrice();
 
     bool externalMemoryProvided;
