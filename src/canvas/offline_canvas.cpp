@@ -254,7 +254,7 @@ void OfflineCanvas::run(Simulation& sim) {
     std::cout << "Output Directory: " << outputDir_ << std::endl;
 
     // Initial boundary setup
-    setBoundaries(sim.getBoundaries(), 0.1f, 0.1f, true);
+    setBoundaries(sim.getBoundaries(), -1.0f, -1.0f, true);
 
     for (int i = 0; i < numFrames_; ++i) {
         currentFrame_ = i;
@@ -280,7 +280,7 @@ void OfflineCanvas::run(Simulation& sim) {
         }
 
         // Update targets for next frame
-        setBoundaries(sim.getBoundaries(), 0.1f, 0.1f, false);  // Non-immediate
+        setBoundaries(sim.getBoundaries());  // Non-immediate
 
         // Progress Bar & Time Estimation
         auto now = std::chrono::steady_clock::now();

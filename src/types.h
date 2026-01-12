@@ -34,8 +34,6 @@ struct MarketState {
     // Market State History (Host pointers)
     float* price_history = nullptr;     // Ring buffer for past prices
     float* pressure_history = nullptr;  // Ring buffer for past pressures
-
-    float last_price;  // Price at previous step (for belief updates)
 };
 
 struct MarketParams {

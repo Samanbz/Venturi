@@ -23,7 +23,7 @@ Simulation::Simulation(const MarketParams& params,
                        PlotVar xVar,
                        PlotVar yVar,
                        PlotVar colorVar)
-    : params_(params), rng(std::random_device{}()), normal_dist(0.0f, 1.0f) {
+    : params_(params), colorVar_(colorVar), rng(std::random_device{}()), normal_dist(0.0f, 1.0f) {
     if ((vk_X != nullptr) != (vk_Y != nullptr) || (vk_X != nullptr) != (vk_Color != nullptr)) {
         throw std::invalid_argument(
             "All of vk_X, vk_Y, and vk_Color must be provided or all must be nullptr");
@@ -57,6 +57,10 @@ Simulation::Simulation(const MarketParams& params,
                 return state_.d_risk_aversion;
             case PlotVar::LocalDensity:
                 return state_.d_local_density;
+            case PlotVar::Greed:
+                return state_.d_greed;
+            case PlotVar::Belief:
+                return state_.d_belief;
             default:
                 throw std::runtime_error("Unknown PlotVar");
         }
@@ -64,6 +68,11 @@ Simulation::Simulation(const MarketParams& params,
 
     // Assign external memory if applicable
     if (externalMemoryProvided) {
+        if (xVar == yVar || xVar == colorVar || yVar == colorVar) {
+            throw std::invalid_argument(
+                "Cannot map the same PlotVar to multiple axes when using external memory.");
+        }
+
         getPtrRef(xVar) = vk_X;
         d_plot_x = vk_X;
 
@@ -75,9 +84,9 @@ Simulation::Simulation(const MarketParams& params,
     }
 
     // Allocate the rest
-    std::vector<PlotVar> allVars = {PlotVar::Inventory,    PlotVar::ExecutionCost,
-                                    PlotVar::Cash,         PlotVar::Speed,
-                                    PlotVar::RiskAversion, PlotVar::LocalDensity};
+    std::vector<PlotVar> allVars = {
+        PlotVar::Inventory,    PlotVar::ExecutionCost, PlotVar::Cash,  PlotVar::Speed,
+        PlotVar::RiskAversion, PlotVar::LocalDensity,  PlotVar::Greed, PlotVar::Belief};
 
     for (auto var : allVars) {
         float*& ptr = getPtrRef(var);
@@ -90,8 +99,6 @@ Simulation::Simulation(const MarketParams& params,
     cudaMalloc(&state_.d_speed_term_1, size);
     cudaMalloc(&state_.d_speed_term_2, size);
     cudaMalloc(&state_.d_target_inventory, size);
-    cudaMalloc(&state_.d_greed, size);
-    cudaMalloc(&state_.d_belief, size);
 
     cudaMalloc(&state_.d_rngStates, params.num_agents * sizeof(curandState));
 
@@ -102,13 +109,15 @@ Simulation::Simulation(const MarketParams& params,
     cudaMalloc(&state_.d_pressure_buffer, 2 * sizeof(float));
 
     // Allocate host history buffers
-    if (params.max_latency_steps > 0) {
-        state_.price_history = new float[params.max_latency_steps];
-        state_.pressure_history = new float[params.max_latency_steps];
+    int history_size = std::max(params.max_latency_steps, 2);
+    state_.price_history = new float[history_size];
+    std::fill_n(state_.price_history, history_size, params.price_init);
 
-        // Initialize history
-        std::fill_n(state_.price_history, params.max_latency_steps, params.price_init);
+    if (params.max_latency_steps > 0) {
+        state_.pressure_history = new float[params.max_latency_steps];
         std::fill_n(state_.pressure_history, params.max_latency_steps, 0.0f);
+    } else {
+        state_.pressure_history = nullptr;
     }
 
     // Initialize RNG states once with time-based seed
@@ -123,13 +132,32 @@ Simulation::Simulation(const MarketParams& params,
     launchFlipSigns(state_.d_inventory, params.num_agents);
 
     // Initialize from log-normal to avoid negative values leading to NaNs later
-    launchInitializeLogNormal(state_.d_risk_aversion, params.risk_mean, params.risk_stddev,
-                              state_.d_rngStates, params.num_agents);
+    // Convert generic mean/stddev to underlying LogNormal parameters mu/sigma
+    auto toLogNormalParams = [](float m, float s) -> std::pair<float, float> {
+        if (m <= 0)
+            return {0.0f, 1.0f};  // Fallback
+        float v = s * s;
+        float sigma2 = std::log(1.0f + v / (m * m));
+        float mu = std::log(m) - 0.5f * sigma2;
+        return {mu, std::sqrt(sigma2)};
+    };
 
-    launchInitializeLogNormal(state_.d_greed, params.greed_mean, params.greed_stddev,
-                              state_.d_rngStates, params.num_agents);
-    cudaMemset(state_.d_belief, 0, size);
-    state_.last_price = params.price_init;
+    auto [risk_mu, risk_sigma] = toLogNormalParams(params.risk_mean, params.risk_stddev);
+    launchInitializeLogNormal(state_.d_risk_aversion, risk_mu, risk_sigma, state_.d_rngStates,
+                              params.num_agents);
+
+    auto [greed_mu, greed_sigma] = toLogNormalParams(params.greed_mean, params.greed_stddev);
+    std::cout << "Greed Params: Mean=" << params.greed_mean << ", StdDev=" << params.greed_stddev
+              << std::endl;
+    std::cout << "Calculated LogNormal Params: Mu=" << greed_mu << ", Sigma=" << greed_sigma
+              << std::endl;
+
+    launchInitializeLogNormal(state_.d_greed, greed_mu, greed_sigma, state_.d_rngStates,
+                              params.num_agents);
+
+    // Initialize Belief with some variance so visualization isn't uniform
+    // Belief usually ranges [-1, 1] or follows price trends
+    launchInitializeNormal(state_.d_belief, 0.0f, 0.1f, state_.d_rngStates, params.num_agents);
 
     // Initialize target inventory
     launchInitializeNormal(state_.d_target_inventory, params.target_inventory_mean,
@@ -143,7 +171,6 @@ Simulation::Simulation(const MarketParams& params,
     if (state_.d_execution_cost != vk_X && state_.d_execution_cost != vk_Y)
         cudaMemset(state_.d_execution_cost, 0, size);
 
-    // If mapped to external memory, we should still initialize them if they are outputs/state
     // But if they are inputs initialized by kernels above (like inventory), we are good.
     // Cash starts at 0.
     if (state_.d_cash == vk_X || state_.d_cash == vk_Y)
@@ -236,12 +263,16 @@ void Simulation::step(bool waitForRender, bool signalRender) {
 
     float observed_pressure = state_.pressure;
 
+    // Always update price history (size >= 2)
+    int history_size = std::max(params_.max_latency_steps, 2);
+    // Be careful with signed modulo if dt is somehow negative (it shouldn't be)
+    state_.price_history[state_.dt % history_size] = state_.price;
+
     // Latency and Jitter Logic
     if (params_.max_latency_steps > 0) {
-        // Store current state in history
+        // Store current pressure in history
         int current_idx = state_.dt % params_.max_latency_steps;
         state_.pressure_history[current_idx] = state_.pressure;
-        state_.price_history[current_idx] = state_.price;
 
         // Calculate latency
         float latency = params_.latency_mean;
@@ -267,12 +298,19 @@ void Simulation::step(bool waitForRender, bool signalRender) {
     }
 
     float current_price_start = state_.price;
-    float price_change = current_price_start - state_.last_price;
+
+    // Calculate price change using history
+    int prev_idx = (state_.dt - 1) % history_size;
+    // Handle wrap-around for safety modulo arithmetic on potentially small negative if logic
+    // changes
+    if (prev_idx < 0)
+        prev_idx += history_size;
+
+    float previous_price = state_.price_history[prev_idx];
+    float price_change = current_price_start - previous_price;
 
     updateAgentState(observed_pressure, price_change);
     updatePrice();
-
-    state_.last_price = current_price_start;
 
     if (signalRender && cudaSignalSemaphore != nullptr) {
         cudaExternalSemaphoreSignalParams signalParams{};

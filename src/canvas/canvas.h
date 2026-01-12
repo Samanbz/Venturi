@@ -26,14 +26,15 @@
  * @brief Push constants used in shaders for coordinate transformation and coloration.
  */
 struct PushConstants {
-    glm::mat4 p;       ///< Projection matrix (Ortho)
-    float minC;        ///< Minimum color value range
-    float maxC;        ///< Maximum color value range
-    float w;           ///< Point weight/size or interpolation factor
-    float pad;         ///< Alignment pad
-    glm::vec2 scale;   ///< Reprojection scale
-    glm::vec2 offset;  ///< Reprojection offset
-    float fadeRate;    ///< Fade rate
+    glm::mat4 p;        ///< Projection matrix (Ortho)
+    float minC;         ///< Minimum color value range
+    float maxC;         ///< Maximum color value range
+    float w;            ///< Point weight/size or interpolation factor
+    float pad;          ///< Alignment pad
+    glm::vec2 scale;    ///< Reprojection scale
+    glm::vec2 offset;   ///< Reprojection offset
+    float trailWeight;  ///< Trail Weight (fade rate)
+    float contrast;     ///< Gamma correction
 };
 
 /**
@@ -99,8 +100,8 @@ class Canvas {
      * @brief Updates the camera/simulation boundaries for rendering mapping.
      */
     void setBoundaries(Boundaries boundaries,
-                       float padX = 0.1f,
-                       float padY = 0.1f,
+                       float zoomX = -1.0f,
+                       float zoomY = -1.0f,
                        bool immediate = false);
 
     void setStepsPerFrame(int steps) { stepsPerFrame_ = steps; }
@@ -110,6 +111,9 @@ class Canvas {
 
    protected:
     int stepsPerFrame_ = 2;  // Default speed
+    float zoomX_ = 0.9f;
+    float zoomY_ = 0.9f;
+
     void initVulkan();
     void createVulkanInstance();
     void pickPhysicalDevice();

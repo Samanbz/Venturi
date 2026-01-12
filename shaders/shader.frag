@@ -5,6 +5,7 @@ layout(location = 0) out vec4 outColor;
 
 layout(push_constant) uniform PushConstants {
     layout(offset = 72) float trailWeight;
+    layout(offset = 76) float contrast;
 } push;
 
 // Red-White-Green colormap with Intensity Scaling
@@ -13,9 +14,10 @@ vec3 cold_hot(float t) {
     // Calculate distance from center [0, 1]
     float dist = abs(t - 0.5) * 2.0; 
     
-    // Non-linear visual scaling: boost low values so they aren't just white
-    // power < 1.0 makes small values rise faster (more color)
-    float intensity = pow(dist, 0.7); 
+    // Apply contrast correction
+    // If contrast < 1.0 (e.g. 0.2), it boosts low values (log-like behavior)
+    // If contrast > 1.0, it suppresses low values
+    float intensity = pow(dist, push.contrast); 
 
     vec3 white = vec3(0.95, 0.95, 0.95);
     

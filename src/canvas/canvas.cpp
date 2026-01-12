@@ -332,13 +332,29 @@ std::pair<int, int> Canvas::exportSemaphores() {
     return {fdVulkanFinished, fdCudaFinished};
 }
 
-void Canvas::setBoundaries(Boundaries boundaries, float padX, float padY, bool immediate) {
+void Canvas::setBoundaries(Boundaries boundaries, float zoomX, float zoomY, bool immediate) {
+    if (zoomX > 0.0f) {
+        zoomX_ = zoomX;
+    }
+    if (zoomY > 0.0f) {
+        zoomY_ = zoomY;
+    }
+
     float rangeX = boundaries.maxX - boundaries.minX;
     float rangeY = boundaries.maxY - boundaries.minY;
-    targetMinY = boundaries.minY - padY * rangeY;
-    targetMaxY = boundaries.maxY + padY * rangeY;
-    targetMinX = boundaries.minX - padX * rangeX;
-    targetMaxX = boundaries.maxX + padX * rangeX;
+
+    // Handle Zoom (Maintain Center at 0,0)
+    float centerX = 0.0f;
+    float centerY = 0.0f;
+
+    float newRangeX = rangeX / zoomX_;
+    float newRangeY = rangeY / zoomY_;
+
+    targetMinY = centerY - newRangeY * 0.5f;
+    targetMaxY = centerY + newRangeY * 0.5f;
+    targetMinX = centerX - newRangeX * 0.5f;
+    targetMaxX = centerX + newRangeX * 0.5f;
+
     targetMinColor = boundaries.minColor;
     targetMaxColor = boundaries.maxColor;
 
@@ -516,7 +532,7 @@ void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer,
     PushConstants fadePush{};
     fadePush.scale = {(maxX - minX) / prevW, (maxY - minY) / prevH};
     fadePush.offset = {(minX - prevMinX) / prevW, (prevMaxY - maxY) / prevH};
-    fadePush.fadeRate = 0.07f;
+    fadePush.trailWeight = 0.07f;  // This was fadeRate
 
     vkCmdPushConstants(commandBuffer, fadePipelineLayout,
                        VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, 0,
@@ -530,6 +546,12 @@ void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer,
     push.minC = minColor;
     push.maxC = maxColor;
     push.w = 0.05f;
+    push.trailWeight = 0.005f;  // Alpha for trail accumulation
+
+    // Adaptive constrast based on symmetricity
+    bool symmetric = (minColor < 0.0f);
+    push.contrast = symmetric ? 0.7f : 0.2f;
+
     vkCmdPushConstants(commandBuffer, pipelineLayout,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        sizeof(PushConstants), &push);

@@ -5,9 +5,9 @@
 #include <string>
 #include <vector>
 
-#include "./canvas/canvas.h"
-#include "./canvas/offline_canvas.h"
-#include "./canvas/realtime_canvas.h"
+#include "canvas/canvas.h"
+#include "canvas/offline_canvas.h"
+#include "canvas/realtime_canvas.h"
 #include "simulation.h"
 
 static void printBoundaries(const Boundaries& boundaries) {
@@ -81,10 +81,10 @@ int main(int argc, char** argv) {
     params.decay_rate = 1e-4f;
     params.mass_alpha = 0.001f;
     params.mass_beta = 0.3f;
-    params.risk_mean = 0.1f;
-    params.risk_stddev = 1.0f;
+    params.risk_mean = 1.0f;
+    params.risk_stddev = 0.9f;
     params.greed_mean = 1.0f;
-    params.greed_stddev = 5.5f;
+    params.greed_stddev = 1.0f;
     params.trend_decay = 0.5f;
     params.target_inventory_mean = 0.0f;
     params.target_inventory_stddev = 1e3f;
@@ -126,9 +126,7 @@ int main(int argc, char** argv) {
     // Initial boundary setup
     Boundaries boundaries = sim.getBoundaries();
     printBoundaries(boundaries);
-    // Use zoom = 1.0f (exact fit) or adjusts as needed. previous -2.0 padding was
-    // confusing/inverted.
-    canvas->setBoundaries(boundaries, 1.0f, 1.0f, true);
+    canvas->setBoundaries(boundaries, 6.0f, 6.0f, true);
 
     // Run the loop
     canvas->run(sim);

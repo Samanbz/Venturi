@@ -328,16 +328,16 @@ __global__ void reduceBoundariesAtomicKernel(
         atomicMinFloat(&output[2], val_x);
         atomicMaxFloat(&output[3], val_x);
 
-        // Track absolute range max for color
-        float abs_c = fabsf(val_c);
-        atomicMaxFloat(&output[5], abs_c);
+        // Track min/max for color
+        atomicMinFloat(&output[4], val_c);
+        atomicMaxFloat(&output[5], val_c);
     }
 }
 
 Boundaries launchComputeBoundaries(
     const float* d_x, const float* d_y, const float* d_c, float* d_buffer, int num_agents) {
-    // Initialize buffer: [min_y, max_y, min_x, max_x, unused, max_abs_c]
-    float init_vals[6] = {1e30f, -1e30f, 1e30f, -1e30f, 0.0f, 0.0f};
+    // Initialize buffer: [min_y, max_y, min_x, max_x, min_c, max_c]
+    float init_vals[6] = {1e30f, -1e30f, 1e30f, -1e30f, 1e30f, -1e30f};
     cudaMemcpy(d_buffer, init_vals, 6 * sizeof(float), cudaMemcpyHostToDevice);
 
     int blockSize = 256;
@@ -352,13 +352,36 @@ Boundaries launchComputeBoundaries(
     float max_y = h_buffer[1];
     float min_x = h_buffer[2];
     float max_x = h_buffer[3];
+    float min_c = h_buffer[4];
+    float max_c = h_buffer[5];
 
-    // Use the absolute max found to create a symmetric range [-max, max]
-    float max_abs_c = h_buffer[5];
+    // Check if color range is likely intended to be symmetric around zero
+    bool isLikelySymmetric = false;
+    if (min_c < 0.0f && max_c > 0.0f) {
+        float abs_min = fabsf(min_c);
+        float abs_max = fabsf(max_c);
+        float largest = fmaxf(abs_min, abs_max);
 
-    float limit = max_abs_c;
-    if (limit < 5.0f)
-        limit = 5.0f;  // Minimum scale
+        // If the smaller side is at least 1% of the larger side, assume symmetric intent.
+        if (largest > 1e-6f && (fminf(abs_min, abs_max) / largest) > 0.01f) {
+            isLikelySymmetric = true;
+        }
+    }
 
-    return {min_y, max_y, min_x, max_x, -limit, limit};
+    if (isLikelySymmetric) {
+        float abs_max = fmaxf(fabsf(min_c), fabsf(max_c));
+        // Enforce a minimum scale only if the range is extremely small to avoid noise amplification
+        if (abs_max < 0.01f)
+            abs_max = 0.01f;
+        min_c = -abs_max;
+        max_c = abs_max;
+    } else {
+        // Adaptive range, no symmetry enforcement
+        // Avoid degenerate color range
+        if (max_c - min_c < 1e-5f) {
+            max_c = min_c + 0.001f;
+        }
+    }
+
+    return {min_y, max_y, min_x, max_x, min_c, max_c};
 }

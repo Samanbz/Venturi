@@ -3,7 +3,16 @@
 
 #include "types.h"
 
-enum class PlotVar { Inventory, ExecutionCost, Cash, Speed, RiskAversion, LocalDensity };
+enum class PlotVar {
+    Inventory,
+    ExecutionCost,
+    Cash,
+    Speed,
+    RiskAversion,
+    LocalDensity,
+    Greed,
+    Belief
+};
 
 class Simulation {
    public:
@@ -47,4 +56,6 @@ class Simulation {
     float* d_plot_x = nullptr;
     float* d_plot_y = nullptr;
     float* d_plot_color = nullptr;
+
+    PlotVar colorVar_;
 };
