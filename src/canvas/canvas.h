@@ -105,12 +105,14 @@ class Canvas {
                        bool immediate = false);
 
     void setStepsPerFrame(int steps) { stepsPerFrame_ = steps; }
+    void setTargetFPS(int fps) { targetFPS_ = fps; }
 
     // The main entry point for the simulation loop
     virtual void run(Simulation& sim) = 0;
 
    protected:
     int stepsPerFrame_ = 2;  // Default speed
+    int targetFPS_ = 60;     // Default FPS
     float zoomX_ = 0.9f;
     float zoomY_ = 0.9f;
 
@@ -132,6 +134,7 @@ class Canvas {
     virtual void initSwapchainResources() = 0;  // Swapchain vs Offline Image
     virtual void createFramebuffers() = 0;
     virtual void drawFrame(Simulation& sim, bool& running) = 0;
+    virtual void drawUI(VkCommandBuffer cmd) {}
 
     // Common Resources
     void createOffscreenResources();

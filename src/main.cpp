@@ -20,14 +20,17 @@ static void printBoundaries(const Boundaries& boundaries) {
 int main(int argc, char** argv) {
     bool offlineMode = false;
     std::string outputDir = "output";
-    int numFrames = 5000;   // Default 40 seconds at 30fps
+    int numFrames = 5000;   // Default
     int numAgents = 50000;  // Default
     int width = 0;
     int height = 0;
-    int stepsPerFrame = 4;  // Default
     float latencyMean = 0.0f;
     float latencyJitter = 0.0f;
     int maxLatencySteps = 1024;  // Default buffer size
+
+    int targetFPS = 60;
+    float speedUp = 1.0f;
+    float preferredDelta = 0.01f;  // 10ms stability target
 
     // Simple argument parsing
     for (int i = 1; i < argc; ++i) {
@@ -43,14 +46,33 @@ int main(int argc, char** argv) {
             width = std::stoi(argv[++i]);
         } else if (strcmp(argv[i], "--height") == 0 && i + 1 < argc) {
             height = std::stoi(argv[++i]);
-        } else if (strcmp(argv[i], "--steps") == 0 && i + 1 < argc) {
-            stepsPerFrame = std::stoi(argv[++i]);
         } else if (strcmp(argv[i], "--latency-mean") == 0 && i + 1 < argc) {
             latencyMean = std::stof(argv[++i]);
         } else if (strcmp(argv[i], "--latency-jitter") == 0 && i + 1 < argc) {
             latencyJitter = std::stof(argv[++i]);
+        } else if (strcmp(argv[i], "--fps") == 0 && i + 1 < argc) {
+            targetFPS = std::stoi(argv[++i]);
+        } else if (strcmp(argv[i], "--speedup") == 0 && i + 1 < argc) {
+            speedUp = std::stof(argv[++i]);
         }
     }
+
+    if (targetFPS <= 0) {
+        targetFPS = 60;
+    }
+
+    // Calculate steps and timedelta
+    float simTimePerFrame = speedUp / static_cast<float>(targetFPS);
+    int stepsPerFrame = std::max(1, static_cast<int>(std::round(simTimePerFrame / preferredDelta)));
+    float actualDelta = simTimePerFrame / stepsPerFrame;
+
+    std::cout << "Configuration:\n";
+    std::cout << "  Target FPS: " << targetFPS << "\n";
+    std::cout << "  Speed Up: " << speedUp << "x\n";
+    std::cout << "  Simulation Time Per Frame: " << simTimePerFrame << "s\n";
+    std::cout << "  Internal Time Delta: " << actualDelta << "s (" << (1.0f / actualDelta)
+              << " Hz)\n";
+    std::cout << "  Steps Per Frame: " << stepsPerFrame << "\n";
 
     if (width == 0)
         width = 1920;
@@ -66,7 +88,7 @@ int main(int argc, char** argv) {
     params.latency_jitter_stddev = latencyJitter;
     params.max_latency_steps = maxLatencySteps;
 
-    params.time_delta = 1.0f / 30.0f;
+    params.time_delta = actualDelta;
     params.price_init = 100.0f;
     params.price_randomness_stddev = 2.0f;
     params.permanent_impact = 1e-6f;
@@ -106,6 +128,7 @@ int main(int argc, char** argv) {
                                                   static_cast<uint32_t>(height));
     }
 
+    canvas->setTargetFPS(targetFPS);
     canvas->setStepsPerFrame(stepsPerFrame);
 
     auto [X_devicePtr, Y_devicePtr, Color_devicePtr] = canvas->getCudaDevicePointers();
@@ -126,7 +149,7 @@ int main(int argc, char** argv) {
     // Initial boundary setup
     Boundaries boundaries = sim.getBoundaries();
     printBoundaries(boundaries);
-    canvas->setBoundaries(boundaries, 6.0f, 6.0f, true);
+    canvas->setBoundaries(boundaries, 10.0f, 13.0f, true);
 
     // Run the loop
     canvas->run(sim);

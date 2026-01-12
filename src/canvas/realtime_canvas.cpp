@@ -216,8 +216,7 @@ void RealTimeCanvas::drawFrame(Simulation& sim, bool& running) {
 }
 
 void RealTimeCanvas::run(Simulation& sim) {
-    const int targetFPS = 60;
-    const microseconds frameDuration(1000000 / targetFPS);
+    const microseconds frameDuration(1000000 / targetFPS_);
 
     // Note: Main calls sim.step() once before calling run(), so the pipeline is primed.
     bool running = true;
