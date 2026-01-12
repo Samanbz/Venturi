@@ -9,7 +9,7 @@ struct InitState : public BenchmarkState {
     float* d_inventory = nullptr;
     float* d_risk_aversion = nullptr;
     curandState* d_rngStates = nullptr;
-    MarketParams params;
+    MarketParams params{};
 
     ~InitState() override { cleanup(); }
 

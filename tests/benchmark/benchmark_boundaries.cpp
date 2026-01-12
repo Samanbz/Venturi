@@ -7,7 +7,7 @@
 class BoundariesFixture : public benchmark::Fixture {
    public:
     Simulation* sim = nullptr;
-    MarketParams params;
+    MarketParams params{};
 
     void SetUp(const ::benchmark::State& state) override {
         params.num_agents = state.range(0);

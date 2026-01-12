@@ -34,6 +34,11 @@ class BaseTestFixture : public ::testing::Test {
         params.risk_mean = 0.5f;
         params.risk_stddev = 0.1f;
 
+        // Latency
+        params.max_latency_steps = 0;
+        params.latency_mean = 0.0f;
+        params.latency_jitter_stddev = 0.0f;
+
         // Spatial parameters
         params.sph_smoothing_radius = 1.0f;
         params.hash_table_size = 2048;

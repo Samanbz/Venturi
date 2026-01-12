@@ -99,6 +99,16 @@ Simulation::Simulation(const MarketParams& params,
     cudaMalloc(&state_.d_boundaries_buffer, 6 * sizeof(float));
     cudaMalloc(&state_.d_pressure_buffer, 2 * sizeof(float));
 
+    // Allocate host history buffers
+    if (params.max_latency_steps > 0) {
+        state_.price_history = new float[params.max_latency_steps];
+        state_.pressure_history = new float[params.max_latency_steps];
+
+        // Initialize history
+        std::fill_n(state_.price_history, params.max_latency_steps, params.price_init);
+        std::fill_n(state_.pressure_history, params.max_latency_steps, 0.0f);
+    }
+
     // Initialize RNG states once with time-based seed
     unsigned long long seed = static_cast<unsigned long long>(time(nullptr));
     launchSetupRNG(state_.d_rngStates, params.num_agents, seed);
@@ -189,13 +199,13 @@ void Simulation::computePressure() {
                           &state_.pressure, params_.num_agents);
 }
 
-void Simulation::updateAgentState() {
+void Simulation::updateAgentState(float observed_pressure) {
     // Compute the trading speed for each agent based on their risk aversion, local density, and
     // pressure
     launchUpdateAgentState(state_.d_speed_term_1, state_.d_speed_term_2, state_.d_local_density,
-                           state_.d_agent_next, state_.pressure, state_.d_speed, state_.d_inventory,
-                           state_.d_target_inventory, state_.d_execution_cost, state_.d_cash,
-                           state_.price, params_);
+                           state_.d_agent_next, observed_pressure, state_.d_speed,
+                           state_.d_inventory, state_.d_target_inventory, state_.d_execution_cost,
+                           state_.d_cash, state_.price, params_);
 }
 
 void Simulation::updatePrice() {
@@ -215,7 +225,40 @@ void Simulation::step(bool waitForRender, bool signalRender) {
     state_.dt++;
     computeLocalDensities();
     computePressure();
-    updateAgentState();
+
+    float observed_pressure = state_.pressure;
+
+    // Latency and Jitter Logic
+    if (params_.max_latency_steps > 0) {
+        // Store current state in history
+        int current_idx = state_.dt % params_.max_latency_steps;
+        state_.pressure_history[current_idx] = state_.pressure;
+        state_.price_history[current_idx] = state_.price;
+
+        // Calculate latency
+        float latency = params_.latency_mean;
+        if (params_.latency_jitter_stddev > 0) {
+            latency += normal_dist(rng) * params_.latency_jitter_stddev;
+        }
+        if (latency < 0)
+            latency = 0;
+
+        // Lookup historical pressure
+        int steps_back = static_cast<int>(latency / params_.time_delta);
+        if (steps_back >= params_.max_latency_steps)
+            steps_back = params_.max_latency_steps - 1;
+
+        // Ensure we don't look back before start of simulation effectively (although ring buffer
+        // handles it with init values) If dt < steps_back, we get values from initialization.
+
+        int lookup_idx = (state_.dt - steps_back) % params_.max_latency_steps;
+        if (lookup_idx < 0)
+            lookup_idx += params_.max_latency_steps;
+
+        observed_pressure = state_.pressure_history[lookup_idx];
+    }
+
+    updateAgentState(observed_pressure);
     updatePrice();
 
     if (signalRender && cudaSignalSemaphore != nullptr) {
@@ -257,4 +300,8 @@ Simulation::~Simulation() {
 
     cudaFree(state_.d_boundaries_buffer);
     cudaFree(state_.d_pressure_buffer);
+
+    // Free host history buffers
+    delete[] state_.price_history;
+    delete[] state_.pressure_history;
 }

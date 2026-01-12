@@ -217,8 +217,6 @@ void OfflineCanvas::writerLoop() {
         std::ofstream file(ss.str(), std::ios::binary);
         file << "P6\n" << width_ << " " << height_ << "\n255\n";
 
-        // RGBA -> RGB manual strip during write or preprocess?
-        // Original code did row-by-row write.
         std::vector<unsigned char> row(width_ * 3);
         const unsigned char* src = frame.pixels.data();
 
@@ -263,7 +261,7 @@ void OfflineCanvas::run(Simulation& sim) {
 
         // Smooth camera movement
         // Alpha adjusted to match RealTime (approx 0.01 at 60Hz ~= 0.02 at 30Hz)
-        float alpha = 0.02f;
+        float alpha = 0.001f;
         minX += (targetMinX - minX) * alpha;
         maxX += (targetMaxX - maxX) * alpha;
         minY += (targetMinY - minY) * alpha;

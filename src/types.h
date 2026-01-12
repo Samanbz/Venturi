@@ -28,13 +28,23 @@ struct MarketState {
     // Scratch buffers for reductions
     float* d_boundaries_buffer = nullptr;  // [min_y, max_y, min_x, max_x, sum_c, sq_sum_c]
     float* d_pressure_buffer = nullptr;    // [sum_s1, sum_s2]
+
+    // Market State History (Host pointers)
+    float* price_history = nullptr;     // Ring buffer for past prices
+    float* pressure_history = nullptr;  // Ring buffer for past pressures
 };
 
 struct MarketParams {
-    int num_agents;                 // N, number of trading agents
-    int num_steps;                  // T, number of simulation steps
-    float time_delta;               // simulation time step size
-    float price_init;               // S_0, initial asset price
+    int num_agents;    // N, number of trading agents
+    int num_steps;     // T, number of simulation steps
+    float time_delta;  // simulation time step size
+    float price_init;  // S_0, initial asset price
+
+    // Latency
+    int max_latency_steps;        // Size of the ring buffer
+    float latency_mean;           // Mean latency in seconds
+    float latency_jitter_stddev;  // Variation in latency per step
+
     float permanent_impact;         // alpha, permanent market impact factor
     float temporary_impact;         // kappa, temporary market impact factor
     float congestion_sensitivity;   // beta, congestion sensitivity factor

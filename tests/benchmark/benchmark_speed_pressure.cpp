@@ -21,7 +21,7 @@ struct SpeedPressureState : public BenchmarkState {
     int* d_agent_indices = nullptr;
     float* d_pressure_buffer = nullptr;
     curandState* d_rngStates = nullptr;
-    MarketParams params;
+    MarketParams params{};
 
     ~SpeedPressureState() override { cleanup(); }
 

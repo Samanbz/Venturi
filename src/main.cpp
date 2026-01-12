@@ -25,6 +25,9 @@ int main(int argc, char** argv) {
     int width = 0;
     int height = 0;
     int stepsPerFrame = 4;  // Default
+    float latencyMean = 0.0f;
+    float latencyJitter = 0.0f;
+    int maxLatencySteps = 1024;  // Default buffer size
 
     // Simple argument parsing
     for (int i = 1; i < argc; ++i) {
@@ -42,6 +45,10 @@ int main(int argc, char** argv) {
             height = std::stoi(argv[++i]);
         } else if (strcmp(argv[i], "--steps") == 0 && i + 1 < argc) {
             stepsPerFrame = std::stoi(argv[++i]);
+        } else if (strcmp(argv[i], "--latency-mean") == 0 && i + 1 < argc) {
+            latencyMean = std::stof(argv[++i]);
+        } else if (strcmp(argv[i], "--latency-jitter") == 0 && i + 1 < argc) {
+            latencyJitter = std::stof(argv[++i]);
         }
     }
 
@@ -53,6 +60,11 @@ int main(int argc, char** argv) {
     MarketParams params{};
     params.num_agents = numAgents;
     params.num_steps = numFrames * stepsPerFrame;
+
+    // Latency
+    params.latency_mean = latencyMean;
+    params.latency_jitter_stddev = latencyJitter;
+    params.max_latency_steps = maxLatencySteps;
 
     params.time_delta = 1.0f / 30.0f;
     params.price_init = 100.0f;
