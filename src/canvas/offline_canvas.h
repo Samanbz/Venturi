@@ -39,9 +39,15 @@ class OfflineCanvas : public Canvas {
     void drawFrame(Simulation& sim, bool& running) override;
 
    private:
+    /**
+     * @brief Downloads the frame from GPU and queues it for writing.
+     * @param frameNum Current frame index.
+     */
     void saveFrame(int frameNum);
 
-    // Async Writer
+    /**
+     * @brief Loop for the background thread that writes frames to disk.
+     */
     void writerLoop();
 
     std::string outputDir_;
@@ -57,7 +63,9 @@ class OfflineCanvas : public Canvas {
     VkDeviceMemory downloadBufferMemory_;
     void* mappedData_ = nullptr;  // Persistent mapping
 
-    // Threading components
+    /**
+     * @brief Struct to hold pixel data for a single frame task.
+     */
     struct FrameData {
         int frameNum;
         std::vector<unsigned char> pixels;

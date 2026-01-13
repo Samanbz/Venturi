@@ -6,14 +6,23 @@
 #include "imgui.h"
 #include "implot.h"
 
+/**
+ * @brief Helper struct for ImPlot scrolling graphs.
+ * Manages a fixed time window of data points.
+ */
 struct ScrollingBuffer {
-    std::vector<float> Data;
-    std::vector<float> Time;
-    float Span = 10.0f;
-    float Alpha = 1.0f;
-    float LastValue = 0.0f;
+    std::vector<float> Data;  ///< Y-axis values
+    std::vector<float> Time;  ///< X-axis timestamps
+    float Span = 10.0f;       ///< Time window duration in seconds
+    float Alpha = 1.0f;       ///< Exponential smoothing factor (1.0 = no smoothing)
+    float LastValue = 0.0f;   ///< Last inserted value (for smoothing)
     bool Initialized = false;
 
+    /**
+     * @brief Adds a new point and prunes old points outside the Span.
+     * @param x Timestamp.
+     * @param y Value.
+     */
     void AddPoint(float x, float y) {
         float val = y;
         if (!Initialized) {

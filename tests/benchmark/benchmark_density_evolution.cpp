@@ -41,6 +41,9 @@ class DensityEvolutionFixture : public benchmark::Fixture {
     }
 
     void TearDown(const ::benchmark::State& state) override { delete sim; }
+
+    // Helper to access private method
+    void runComputeLocalDensities() { sim->computeLocalDensities(); }
 };
 
 BENCHMARK_DEFINE_F(DensityEvolutionFixture, DensityAtStep)(benchmark::State& state) {
@@ -54,7 +57,7 @@ BENCHMARK_DEFINE_F(DensityEvolutionFixture, DensityAtStep)(benchmark::State& sta
 
     // Measure computeLocalDensities performance at this state
     for (auto _ : state) {
-        sim->computeLocalDensities();
+        runComputeLocalDensities();
         cudaDeviceSynchronize();
     }
 }

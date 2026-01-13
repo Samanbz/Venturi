@@ -147,10 +147,6 @@ Simulation::Simulation(const MarketParams& params,
                               params.num_agents);
 
     auto [greed_mu, greed_sigma] = toLogNormalParams(params.greed_mean, params.greed_stddev);
-    std::cout << "Greed Params: Mean=" << params.greed_mean << ", StdDev=" << params.greed_stddev
-              << std::endl;
-    std::cout << "Calculated LogNormal Params: Mu=" << greed_mu << ", Sigma=" << greed_sigma
-              << std::endl;
 
     launchInitializeLogNormal(state_.d_greed, greed_mu, greed_sigma, state_.d_rngStates,
                               params.num_agents);

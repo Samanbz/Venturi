@@ -93,21 +93,44 @@ class Canvas {
 
     /**
      * @brief Exports Vulkan semaphores for external synchronization (CUDA).
+     *
+     * @return Pair of file descriptors {fdWait, fdSignal}.
+     *         - fdWait: Semaphore to wait on (Vulkan finished reading).
+     *         - fdSignal: Semaphore to signal (Vulkan finished writing, though rarely used in this
+     * direction).
      */
     std::pair<int, int> exportSemaphores();
 
     /**
      * @brief Updates the camera/simulation boundaries for rendering mapping.
+     *
+     * @param boundaries Struct containing Min/Max values for X, Y, and Color.
+     * @param zoomX Zoom factor for X (0.0 to 1.0). -1 to keep current.
+     * @param zoomY Zoom factor for Y (0.0 to 1.0). -1 to keep current.
+     * @param immediate If true, snaps to new boundaries instantly (no smoothing).
      */
     void setBoundaries(Boundaries boundaries,
                        float zoomX = -1.0f,
                        float zoomY = -1.0f,
                        bool immediate = false);
 
+    /**
+     * @brief Sets the number of simulation steps to perform per rendered frame.
+     * @param steps Number of physics steps.
+     */
     void setStepsPerFrame(int steps) { stepsPerFrame_ = steps; }
+
+    /**
+     * @brief Sets the target framerate cap.
+     * @param fps Target FPS (e.g., 60).
+     */
     void setTargetFPS(int fps) { targetFPS_ = fps; }
 
-    // The main entry point for the simulation loop
+    /**
+     * @brief Main run loop abstract method.
+     *
+     * @param sim Reference to the Simulation object.
+     */
     virtual void run(Simulation& sim) = 0;
 
    protected:
@@ -128,12 +151,40 @@ class Canvas {
     void createSyncObjects();
 
     // Mode-specific initialization hooks
+
+    /**
+     * @brief Optional window initialization for RealTime canvas.
+     */
     virtual void initWindow() {}  // Only RealTime
+
+    /**
+     * @brief Returns list of Vulkan instance extensions required by the surface/window.
+     */
     virtual std::vector<const char*> getRequiredExtensions() = 0;
-    virtual void createSurface() {}             // Only RealTime
+
+    /**
+     * @brief Optional surface creation for SwapChain based canvases.
+     */
+    virtual void createSurface() {}  // Only RealTime
+
+    /**
+     * @brief Initializes SwapChain or Offscreen images.
+     */
     virtual void initSwapchainResources() = 0;  // Swapchain vs Offline Image
+
+    /**
+     * @brief Creates Framebuffers wrapping the target images.
+     */
     virtual void createFramebuffers() = 0;
+
+    /**
+     * @brief Records and submits command buffers for a single frame.
+     */
     virtual void drawFrame(Simulation& sim, bool& running) = 0;
+
+    /**
+     * @brief Render ImGui UI elements in the render pass (Optional hook).
+     */
     virtual void drawUI(VkCommandBuffer cmd) {}
 
     // Common Resources

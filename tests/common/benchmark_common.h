@@ -7,16 +7,33 @@
 #include "kernels/common.cuh"
 #include "kernels/launchers.h"
 
-// Base state container for simulation benchmarks
+/**
+ * @brief Base state container for managing benchmark resources.
+ *
+ * Provides a standard interface for allocating and freeing GPU memory
+ * needed for different benchmarking scenarios.
+ */
 struct BenchmarkState {
     bool initialized = false;
     size_t current_capacity = 0;
 
     virtual ~BenchmarkState() {}
 
+    /**
+     * @brief Pure virtual method to allocate GPU memory for `n` elements.
+     */
     virtual void allocate(size_t n) = 0;
+
+    /**
+     * @brief Pure virtual method to free allocated GPU memory.
+     */
     virtual void free_memory() = 0;
 
+    /**
+     * @brief Re-allocates memory if the requested capacity `required_n` exceeds current.
+     *
+     * @param required_n Number of elements to reserve space for.
+     */
     void ensureCapacity(size_t required_n) {
         if (initialized && current_capacity >= required_n) {
             return;  // Already have enough capacity
@@ -33,6 +50,9 @@ struct BenchmarkState {
         cudaDeviceSynchronize();
     }
 
+    /**
+     * @brief Frees resources and resets state.
+     */
     virtual void cleanup() {
         if (initialized) {
             free_memory();
@@ -42,7 +62,12 @@ struct BenchmarkState {
     }
 };
 
-// Common state for simulation benchmarks (Spatial Hashing, Local Density)
+/**
+ * @brief State container specifically for Spatial Hashing and Local Density benchmarks.
+ *
+ * Holds device pointers for inventory, execution cost, RNG states, and
+ * the spatial hash grid structures (cell heads and linked lists).
+ */
 struct SpatialState : public BenchmarkState {
     float* d_inventory = nullptr;
     float* d_execution_cost = nullptr;
@@ -77,11 +102,6 @@ class SimulationFixture : public benchmark::Fixture {
                          bool use_custom_params = false) {
         state.params.num_agents = bench_state.range(0);
         int dist_type = 0;
-        // Only access range(1) if it exists (for InitFixture which uses Args)
-        // LocalDensityFixture uses Range which only has 1 arg.
-        // We can't easily check size, so we assume 0 if not provided.
-        // Actually, InitFixture doesn't use setupSimulation.
-        // So we can just set it to 0.
 
         // Set defaults
         state.params.hash_table_size = state.params.num_agents;

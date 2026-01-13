@@ -5,6 +5,13 @@
 #include <stdexcept>
 #include <vector>
 
+/**
+ * @brief Reads a raw binary file into a byte vector.
+ *
+ * @param filename Absolute or relative path to the file.
+ * @return std::vector<char> containing file contents.
+ * @throws std::runtime_error if file cannot be opened.
+ */
 static std::vector<char> readFile(const std::string& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
@@ -20,6 +27,13 @@ static std::vector<char> readFile(const std::string& filename) {
     return buffer;
 }
 
+/**
+ * @brief Maps a file descriptor (from Vulkan external memory) to a CUDA device pointer.
+ *
+ * @param fd File descriptor representing the external memory.
+ * @param size Size of the memory block in bytes.
+ * @return float* Mapped CUDA device pointer.
+ */
 float* mapFDToCudaPointer(int fd, size_t size) {
     // Define the import properties
     cudaExternalMemoryHandleDesc desc{};

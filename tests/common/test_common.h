@@ -15,11 +15,18 @@
 #include "kernels/common.cuh"
 #include "kernels/launchers.h"
 
-// Common base class for Venturi tests
+/**
+ * @brief Common GTest fixture for Venturi unit tests.
+ *
+ * Sets up a standard `MarketParams` configuration with reasonable defaults
+ */
 class BaseTestFixture : public ::testing::Test {
    protected:
     MarketParams params;
 
+    /**
+     * @brief Constructs the fixture and initializes default parameters.
+     */
     BaseTestFixture() {
         // Default parameters common to most tests
         params.num_agents = 10000;

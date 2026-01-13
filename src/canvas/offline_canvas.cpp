@@ -304,8 +304,8 @@ void OfflineCanvas::run(Simulation& sim) {
         drawFrame(sim, r);
 
         // Collect stats
-        priceHistory_.push_back(sim.state_.price);
-        pressureHistory_.push_back(sim.state_.pressure);
+        priceHistory_.push_back(sim.getState().price);
+        pressureHistory_.push_back(sim.getState().pressure);
 
         saveFrame(i);  // This waits for fence
 

@@ -6,9 +6,30 @@
 #include <string>
 #include <vector>
 
-// Simple CPU-side plotter for burning graphs into pixel buffers
+/**
+ * @brief Simple CPU-side plotter for burning graphs into pixel buffers.
+ * Used for debugging or headless overlays.
+ */
 class SimplePlotter {
    public:
+    /**
+     * @brief Draws a line graph onto an existing RGBA image buffer.
+     *
+     * @param image Flat vector of pixels (RGBA8).
+     * @param imgWidth Width of the image.
+     * @param imgHeight Height of the image.
+     * @param data Vector of float values to plot.
+     * @param yMin Minimum Y range.
+     * @param yMax Maximum Y range.
+     * @param x Top-left X coordinate of the plot area.
+     * @param y Top-left Y coordinate of the plot area.
+     * @param w Width of the plot area.
+     * @param h Height of the plot area.
+     * @param title Title string to display.
+     * @param r Red component (0-255).
+     * @param g Green component (0-255).
+     * @param b Blue component (0-255).
+     */
     static void PlotLine(std::vector<unsigned char>& image,
                          int imgWidth,
                          int imgHeight,

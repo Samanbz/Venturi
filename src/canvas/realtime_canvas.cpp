@@ -244,7 +244,7 @@ void RealTimeCanvas::run(Simulation& sim) {
         }
 
         // Update boundaries
-        float alpha = 0.005f;
+        float alpha = 0.0f;
         minX += (targetMinX - minX) * alpha;
         maxX += (targetMaxX - maxX) * alpha;
         minY += (targetMinY - minY) * alpha;
@@ -329,9 +329,9 @@ void RealTimeCanvas::initImGui() {
 
 void RealTimeCanvas::renderUI(Simulation& sim) {
     // Update Data
-    float time = sim.state_.dt * sim.params_.time_delta;
-    priceHistory_.AddPoint(time, sim.state_.price);
-    pressureHistory_.AddPoint(time, sim.state_.pressure);
+    float time = sim.getState().dt * sim.getParams().time_delta;
+    priceHistory_.AddPoint(time, sim.getState().price);
+    pressureHistory_.AddPoint(time, sim.getState().pressure);
 
     // Start Frame
     ImGui_ImplVulkan_NewFrame();
@@ -344,9 +344,9 @@ void RealTimeCanvas::renderUI(Simulation& sim) {
 
     ImGui::Begin("Market Microstructure", nullptr, ImGuiWindowFlags_NoCollapse);
 
-    ImGui::Text("Agents: %d", sim.params_.num_agents);
-    ImGui::Text("Price: %.2f", sim.state_.price);
-    ImGui::Text("Net Pressure: %.4f", sim.state_.pressure);
+    ImGui::Text("Agents: %d", sim.getParams().num_agents);
+    ImGui::Text("Price: %.2f", sim.getState().price);
+    ImGui::Text("Net Pressure: %.4f", sim.getState().pressure);
     ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
 
     float historyDuration = priceHistory_.Span;
