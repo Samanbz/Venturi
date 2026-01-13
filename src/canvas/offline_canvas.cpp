@@ -289,10 +289,33 @@ void OfflineCanvas::run(Simulation& sim) {
 
     for (int i = 0; i < numFrames_; ++i) {
         currentFrame_ = i;
+        updateZoomSchedule();
+
+        static float prevZoom = -1.0f;
+        if (prevZoom < 0)
+            prevZoom = zoomScheduleStart_;  // First run
+
+        // updateZoomSchedule updates zoomX_
+        float currentZoom = zoomX_;
+
+        if (std::abs(currentZoom - prevZoom) > 1e-5f) {
+            float scaleFactor = prevZoom / currentZoom;
+            float centerX = (targetMinX + targetMaxX) * 0.5f;
+            float halfSpanX = (targetMaxX - targetMinX) * 0.5f;
+            targetMinX = centerX - halfSpanX * scaleFactor;
+            targetMaxX = centerX + halfSpanX * scaleFactor;
+
+            float centerY = (targetMinY + targetMaxY) * 0.5f;
+            float halfSpanY = (targetMaxY - targetMinY) * 0.5f;
+            targetMinY = centerY - halfSpanY * scaleFactor;
+            targetMaxY = centerY + halfSpanY * scaleFactor;
+
+            prevZoom = currentZoom;
+        }
 
         // Smooth camera movement
         // Alpha adjusted to match RealTime (approx 0.01 at 60Hz ~= 0.02 at 30Hz)
-        float alpha = 0.001f;
+        float alpha = 0.5f;
         minX += (targetMinX - minX) * alpha;
         maxX += (targetMaxX - maxX) * alpha;
         minY += (targetMinY - minY) * alpha;
@@ -314,9 +337,6 @@ void OfflineCanvas::run(Simulation& sim) {
             bool signalRender = (k == stepsPerFrame_ - 1);
             sim.step(false, signalRender);
         }
-
-        // Update targets for next frame
-        setBoundaries(sim.getBoundaries());  // Non-immediate
 
         // Progress Bar & Time Estimation
         auto now = std::chrono::steady_clock::now();

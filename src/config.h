@@ -25,6 +25,11 @@ struct SimConfig {
     float historyDuration = 30.0f;
     float smoothingAlpha = 0.5f;
 
+    // Zoom Schedule
+    float zoomStart = 10.0f;
+    float zoomEnd = 50.0f;
+    int zoomDuration = 2000;
+
     // Timing (Derived)
     int stepsPerFrame = 1;
 
@@ -38,28 +43,28 @@ struct SimConfig {
         marketParams.time_delta = 0.0f;  // Calculated in finalize()
 
         marketParams.latency_mean = 2.0f;
-        marketParams.latency_jitter_stddev = 1.0f;
+        marketParams.latency_jitter_stddev = 100.0f;
         marketParams.max_latency_steps = 1024;
 
         marketParams.price_init = 100.0f;
         marketParams.price_randomness_stddev = 1.5f;
-        marketParams.permanent_impact = 1e-6f;
-        marketParams.temporary_impact = 0.1f;
-        marketParams.sph_smoothing_radius = 1.0f;
-        marketParams.congestion_sensitivity = 0.06f;
+        marketParams.permanent_impact = 1e-5f;
+        marketParams.temporary_impact = 100.0f;
+        marketParams.sph_smoothing_radius = 100.0f;
+        marketParams.congestion_sensitivity = 0.9f;
 
         marketParams.hash_table_size = 0;  // Calculated in finalize()
 
-        marketParams.decay_rate = 3e-4f;
-        marketParams.mass_alpha = 0.001f;
-        marketParams.mass_beta = 0.3f;
+        marketParams.decay_rate = 1e-4f;
+        marketParams.mass_alpha = 0.01f;
+        marketParams.mass_beta = 0.1f;
         marketParams.risk_mean = 1.0f;
-        marketParams.risk_stddev = 0.9f;
-        marketParams.greed_mean = 2.0f;
-        marketParams.greed_stddev = 20.0f;
-        marketParams.trend_decay = 0.5f;
+        marketParams.risk_stddev = 1.1f;
+        marketParams.greed_mean = 5.0f;
+        marketParams.greed_stddev = 10.0f;
+        marketParams.trend_decay = 0.9f;
         marketParams.target_inventory_mean = 0.0f;
-        marketParams.target_inventory_stddev = 1e2f;
+        marketParams.target_inventory_stddev = 2e2f;
     }
 
     /**
@@ -118,6 +123,15 @@ static SimConfig parseArgs(int argc, char** argv) {
             config.historyDuration = std::stof(argv[++i]);
         } else if (arg == "--smooth" && i + 1 < argc) {
             config.smoothingAlpha = std::stof(argv[++i]);
+        }
+
+        // --- Zoom Schedule ---
+        else if (arg == "--zoom-start" && i + 1 < argc) {
+            config.zoomStart = std::stof(argv[++i]);
+        } else if (arg == "--zoom-end" && i + 1 < argc) {
+            config.zoomEnd = std::stof(argv[++i]);
+        } else if (arg == "--zoom-duration" && i + 1 < argc) {
+            config.zoomDuration = std::stoi(argv[++i]);
         }
 
         // --- Market Parameters ---

@@ -243,16 +243,37 @@ void RealTimeCanvas::run(Simulation& sim) {
             sim.step(waitForRender, signalRender);
         }
 
+        updateZoomSchedule();
+
+        // Dynamic Zoom Support for RealTime
+        // Same logic as Offline (inferred scaling off zoom change)
+        static float prevZoom = -1.0f;
+        if (prevZoom < 0)
+            prevZoom = zoomScheduleStart_;
+        float currentZoom = zoomX_;
+        if (std::abs(currentZoom - prevZoom) > 1e-5f) {
+            float scaleFactor = prevZoom / currentZoom;
+            float centerX = (targetMinX + targetMaxX) * 0.5f;
+            float halfSpanX = (targetMaxX - targetMinX) * 0.5f;
+            targetMinX = centerX - halfSpanX * scaleFactor;
+            targetMaxX = centerX + halfSpanX * scaleFactor;
+
+            float centerY = (targetMinY + targetMaxY) * 0.5f;
+            float halfSpanY = (targetMaxY - targetMinY) * 0.5f;
+            targetMinY = centerY - halfSpanY * scaleFactor;
+            targetMaxY = centerY + halfSpanY * scaleFactor;
+
+            prevZoom = currentZoom;
+        }
+
         // Update boundaries
-        float alpha = 0.0f;
+        float alpha = 0.1f;
         minX += (targetMinX - minX) * alpha;
         maxX += (targetMaxX - maxX) * alpha;
         minY += (targetMinY - minY) * alpha;
         maxY += (targetMaxY - maxY) * alpha;
         minColor += (targetMinColor - minColor) * alpha;
         maxColor += (targetMaxColor - maxColor) * alpha;
-
-        setBoundaries(sim.getBoundaries());
 
         auto frameEnd = high_resolution_clock::now();
         auto elapsed = duration_cast<microseconds>(frameEnd - frameStart);

@@ -127,6 +127,15 @@ class Canvas {
     void setTargetFPS(int fps) { targetFPS_ = fps; }
 
     /**
+     * @brief Sets dynamic zoom schedule.
+     *
+     * @param start Initial zoom factor.
+     * @param end Final zoom factor.
+     * @param duration Duration in frames.
+     */
+    void setZoomSchedule(float start, float end, int duration);
+
+    /**
      * @brief Main run loop abstract method.
      *
      * @param sim Reference to the Simulation object.
@@ -138,6 +147,14 @@ class Canvas {
     int targetFPS_ = 60;     // Default FPS
     float zoomX_ = 0.9f;
     float zoomY_ = 0.9f;
+
+    // Zoom Schedule State
+    float zoomScheduleStart_ = 1.0f;
+    float zoomScheduleEnd_ = 1.0f;
+    int zoomScheduleDuration_ = 0;
+    int currentFrameCount_ = 0;
+
+    void updateZoomSchedule();
 
     void initVulkan();
     void createVulkanInstance();

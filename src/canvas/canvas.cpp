@@ -22,6 +22,29 @@ using std::chrono::high_resolution_clock;
 using std::chrono::microseconds;
 using std::chrono::seconds;
 
+void Canvas::setZoomSchedule(float start, float end, int duration) {
+    zoomScheduleStart_ = start;
+    zoomScheduleEnd_ = end;
+    zoomScheduleDuration_ = duration;
+    currentFrameCount_ = 0;
+}
+
+void Canvas::updateZoomSchedule() {
+    if (zoomScheduleDuration_ <= 0)
+        return;
+
+    if (currentFrameCount_ <= zoomScheduleDuration_) {
+        float t =
+            static_cast<float>(currentFrameCount_) / static_cast<float>(zoomScheduleDuration_);
+        // Linear interpolation of zoom factor
+        float currentZoom = zoomScheduleStart_ + (zoomScheduleEnd_ - zoomScheduleStart_) * t;
+
+        zoomX_ = currentZoom;
+        zoomY_ = currentZoom;
+    }
+    currentFrameCount_++;
+}
+
 Canvas::~Canvas() {
     vkDeviceWaitIdle(device_);
 
