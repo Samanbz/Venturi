@@ -128,8 +128,8 @@ Simulation::Simulation(const MarketParams& params,
     launchInitializeExponential(state_.d_inventory, params.decay_rate, state_.d_rngStates,
                                 params.num_agents);
 
-    // Initialize half as buyers (negative inventory)
-    launchFlipSigns(state_.d_inventory, params.num_agents);
+    // Initialize buyers proportion (negative inventory)
+    launchFlipSigns(state_.d_inventory, params.num_agents, params.buyer_proportion);
 
     // Initialize from log-normal to avoid negative values leading to NaNs later
     // Convert generic mean/stddev to underlying LogNormal parameters mu/sigma

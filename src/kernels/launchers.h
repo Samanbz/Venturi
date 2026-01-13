@@ -69,7 +69,7 @@ extern void launchInitializeLogNormal(
  * @param d_data Device pointer to the data buffer.
  * @param num_agents Number of agents.
  */
-extern void launchFlipSigns(float* d_data, int num_agents);
+extern void launchFlipSigns(float* d_data, int num_agents, float buyer_proportion);
 
 /**
  * @brief Builds the Spatial Hash Grid on the GPU.

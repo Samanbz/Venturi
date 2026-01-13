@@ -79,6 +79,8 @@ struct MarketParams {
 
     float target_inventory_mean;    ///< Mean Target Inventory
     float target_inventory_stddev;  ///< StdDev Target Inventory
+
+    float buyer_proportion;  ///< Proportion of agents initialized as buyers (0.0 to 1.0)
 };
 
 /**

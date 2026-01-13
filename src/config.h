@@ -47,15 +47,15 @@ struct SimConfig {
         marketParams.time_delta = 0.0f;  // Calculated in finalize()
 
         marketParams.latency_mean = 2.0f;
-        marketParams.latency_jitter_stddev = 100.0f;
+        marketParams.latency_jitter_stddev = 50.0f;
         marketParams.max_latency_steps = 1024;
 
         marketParams.price_init = 100.0f;
         marketParams.price_randomness_stddev = 1.5f;
-        marketParams.permanent_impact = 1e-5f;
-        marketParams.temporary_impact = 100.0f;
-        marketParams.sph_smoothing_radius = 100.0f;
-        marketParams.congestion_sensitivity = 0.9f;
+        marketParams.permanent_impact = 1e-6f;
+        marketParams.temporary_impact = 50.0f;
+        marketParams.sph_smoothing_radius = 500.0f;
+        marketParams.congestion_sensitivity = 0.6f;
 
         marketParams.hash_table_size = 0;  // Calculated in finalize()
 
@@ -63,12 +63,12 @@ struct SimConfig {
         marketParams.mass_alpha = 0.01f;
         marketParams.mass_beta = 0.1f;
         marketParams.risk_mean = 1.0f;
-        marketParams.risk_stddev = 1.1f;
+        marketParams.risk_stddev = 1.5f;
         marketParams.greed_mean = 5.0f;
         marketParams.greed_stddev = 10.0f;
         marketParams.trend_decay = 0.9f;
         marketParams.target_inventory_mean = 0.0f;
-        marketParams.target_inventory_stddev = 1e2f;
+        marketParams.target_inventory_stddev = 0e2f;
 
         marketParams.buyer_proportion = 0.5f;
     }

@@ -383,8 +383,10 @@ void Canvas::setBoundaries(Boundaries boundaries, float zoomX, float zoomY, bool
     targetMinX = centerX - newRangeX * 0.5f;
     targetMaxX = centerX + newRangeX * 0.5f;
 
-    targetMinColor = boundaries.minColor;
-    targetMaxColor = boundaries.maxColor;
+    // Enforce symmetric, zero-centered color scale
+    float colorLimit = std::max(std::abs(boundaries.minColor), std::abs(boundaries.maxColor));
+    targetMinColor = -colorLimit;
+    targetMaxColor = colorLimit;
 
     if (immediate) {
         minY = targetMinY;

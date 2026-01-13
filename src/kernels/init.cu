@@ -113,21 +113,23 @@ void launchInitializeLogNormal(
                                                         num_agents);
 }
 
-// Kernel to flip signs for the second half of agents
-__global__ void flipSignsKernel(float* data, int num_agents) {
+// Kernel to flip signs for the specified proportion of agents (Buyers)
+__global__ void flipSignsKernel(float* data, int num_agents, float buyer_proportion) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= num_agents)
         return;
 
-    // Second half are buyers (negative inventory)
-    if (idx % 2 == 1) {
-        data[idx] = -data[idx];
+    int cutoff = static_cast<int>(num_agents * buyer_proportion);
+    if (idx < cutoff) {
+        data[idx] = -std::abs(data[idx]);  // Ensure they become negative (Buyers)
+    } else {
+        data[idx] = std::abs(data[idx]);  // Ensure they stay positive (Sellers)
     }
 }
 
-void launchFlipSigns(float* d_data, int num_agents) {
+void launchFlipSigns(float* d_data, int num_agents, float buyer_proportion) {
     int blockSize = 256;
     int numBlocks = (num_agents + blockSize - 1) / blockSize;
 
-    flipSignsKernel<<<numBlocks, blockSize>>>(d_data, num_agents);
+    flipSignsKernel<<<numBlocks, blockSize>>>(d_data, num_agents, buyer_proportion);
 }

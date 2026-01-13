@@ -26,8 +26,7 @@ class Simulation {
     friend class UpdateLogicFixture;
     friend class DensityEvolutionFixture;
     friend class SpeedPressureFixture;
-    friend class LocalDensityFixture;  // Likely missing from grep if it doesn't use Fixture class
-                                       // directly or I missed it
+    friend class LocalDensityFixture;
     friend class SpatialHashingFixture;
 
    public:
