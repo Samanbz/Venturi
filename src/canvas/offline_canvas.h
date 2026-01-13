@@ -63,6 +63,10 @@ class OfflineCanvas : public Canvas {
         std::vector<unsigned char> pixels;
     };
 
+    // Plotting Data
+    std::vector<float> priceHistory_;
+    std::vector<float> pressureHistory_;
+
     std::thread writerThread_;
     std::mutex queueMutex_;
     std::condition_variable queueCv_;

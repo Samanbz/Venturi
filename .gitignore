@@ -8,6 +8,11 @@ output/
 *.mp4
 *.csv
 
+# 3rd party libraries
+third_party/
+vendor/
+include/
+
 # CMake generated files
 CMakeCache.txt
 CMakeFiles/

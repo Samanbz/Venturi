@@ -9,6 +9,8 @@
 #include <sstream>
 #include <vector>
 
+#include "../utils/simple_plotter.h"
+
 OfflineCanvas::OfflineCanvas(size_t numVertices,
                              uint32_t width,
                              uint32_t height,
@@ -188,6 +190,35 @@ void OfflineCanvas::saveFrame(int frameNum) {
     // Direct Memcpy
     std::memcpy(pixels.data(), mappedData_, width_ * height_ * 4);
 
+    // Draw Plots
+    if (!priceHistory_.empty()) {
+        int plotW = width_ / 4;
+        int plotH = height_ / 6;
+        int margin = 20;
+
+        // Price (Top) - Cyan
+        float minP = *std::min_element(priceHistory_.begin(), priceHistory_.end());
+        float maxP = *std::max_element(priceHistory_.begin(), priceHistory_.end());
+        if (std::abs(maxP - minP) < 0.1f) {
+            maxP += 0.1f;
+            minP -= 0.1f;
+        }  // Prevent div by zero
+
+        SimplePlotter::PlotLine(pixels, width_, height_, priceHistory_, minP, maxP, margin, margin,
+                                plotW, plotH, "Price", 0, 255, 255);
+
+        // Pressure (Below) - Magenta
+        float minPr = *std::min_element(pressureHistory_.begin(), pressureHistory_.end());
+        float maxPr = *std::max_element(pressureHistory_.begin(), pressureHistory_.end());
+        if (std::abs(maxPr - minPr) < 0.1f) {
+            maxPr += 0.1f;
+            minPr -= 0.1f;
+        }
+
+        SimplePlotter::PlotLine(pixels, width_, height_, pressureHistory_, minPr, maxPr, margin,
+                                margin + plotH + 10, plotW, plotH, "Pressure", 255, 0, 255);
+    }
+
     // Push to queue
     {
         std::lock_guard<std::mutex> lock(queueMutex_);
@@ -271,6 +302,11 @@ void OfflineCanvas::run(Simulation& sim) {
 
         bool r = true;
         drawFrame(sim, r);
+
+        // Collect stats
+        priceHistory_.push_back(sim.state_.price);
+        pressureHistory_.push_back(sim.state_.pressure);
+
         saveFrame(i);  // This waits for fence
 
         for (int k = 0; k < stepsPerFrame_; ++k) {

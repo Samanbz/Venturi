@@ -66,4 +66,4 @@ help:
 	@echo "  help         - Show this help message"
 
 ffmpeg:
-	ffmpeg -framerate 30 -i output/frame_%05d.ppm -c:v libx264 -pix_fmt yuv420p -preset veryslow -crf 0 -tune animation output.mp4
+	ffmpeg -framerate 60 -i output/frame_%05d.ppm -c:v libx264 -pix_fmt yuv420p -preset veryslow -crf 0 -tune animation output.mp4
