@@ -136,6 +136,17 @@ class Canvas {
     void setZoomSchedule(float start, float end, int duration);
 
     /**
+     * @brief Configures the grid.
+     *
+     * @param enabled Whether to draw the grid.
+     * @param spacing Pixel spacing target for grid lines.
+     */
+    void setGridConfig(bool enabled, float spacing) {
+        gridEnabled_ = enabled;
+        gridSpacing_ = spacing;
+    }
+
+    /**
      * @brief Main run loop abstract method.
      *
      * @param sim Reference to the Simulation object.
@@ -147,6 +158,10 @@ class Canvas {
     int targetFPS_ = 60;     // Default FPS
     float zoomX_ = 0.9f;
     float zoomY_ = 0.9f;
+
+    // Grid settings
+    bool gridEnabled_ = true;
+    float gridSpacing_ = 100.0f;
 
     // Zoom Schedule State
     float zoomScheduleStart_ = 1.0f;
@@ -208,6 +223,7 @@ class Canvas {
     void createOffscreenResources();
     void createOffscreenRenderPass();
     void createFadePipeline();
+    void createGridPipeline();
     void createCopyPipeline();
     void createDescriptorSetLayout();
     void createDescriptorPool();
@@ -267,6 +283,9 @@ class Canvas {
 
     VkPipeline fadePipeline;
     VkPipelineLayout fadePipelineLayout;
+
+    VkPipeline gridPipeline;
+    VkPipelineLayout gridPipelineLayout;
 
     VkPipeline copyPipeline;
     VkPipelineLayout copyPipelineLayout;

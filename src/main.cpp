@@ -53,6 +53,7 @@ int main(int argc, char** argv) {
     canvas->setTargetFPS(config.targetFPS);
     canvas->setStepsPerFrame(config.stepsPerFrame);
     canvas->setZoomSchedule(config.zoomStart, config.zoomEnd, config.zoomDuration);
+    canvas->setGridConfig(config.showGrid, config.gridSpacing);
 
     // Setup Simulation
     auto [X_devicePtr, Y_devicePtr, Color_devicePtr] = canvas->getCudaDevicePointers();
@@ -69,7 +70,7 @@ int main(int argc, char** argv) {
     // Initial boundary setup
     Boundaries boundaries = sim.getBoundaries();
     printBoundaries(boundaries);
-    canvas->setBoundaries(boundaries, 10.0f, 10.0f, true);
+    canvas->setBoundaries(boundaries, config.zoomStart, config.zoomStart, true);
 
     // Run Loop
     canvas->run(sim);

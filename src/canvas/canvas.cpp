@@ -64,6 +64,10 @@ Canvas::~Canvas() {
 
     vkDestroyPipeline(device_, fadePipeline, nullptr);
     vkDestroyPipelineLayout(device_, fadePipelineLayout, nullptr);
+
+    vkDestroyPipeline(device_, gridPipeline, nullptr);
+    vkDestroyPipelineLayout(device_, gridPipelineLayout, nullptr);
+
     vkDestroyPipeline(device_, copyPipeline, nullptr);
     vkDestroyPipelineLayout(device_, copyPipelineLayout, nullptr);
 
@@ -127,6 +131,7 @@ void Canvas::initVulkan() {
     createDescriptorSetLayout();
     createGraphicsPipeline();
     createFadePipeline();
+    createGridPipeline();
     createCopyPipeline();
 
     createCommandPool();
@@ -606,6 +611,21 @@ void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer,
     finalInfo.pClearValues = &clear;
 
     vkCmdBeginRenderPass(commandBuffer, &finalInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    // Grid (Pass 2 - Static, Before Copy)
+    if (gridEnabled_) {
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, gridPipeline);
+        PushConstants gridPush{};
+        gridPush.scale = {maxX - minX, maxY - minY};
+        gridPush.offset = {minX, minY};
+        gridPush.w = gridSpacing_;
+        vkCmdPushConstants(commandBuffer, gridPipelineLayout,
+                           VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, 0,
+                           sizeof(PushConstants), &gridPush);
+        vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+    }
+
+    // Copy Pipeline (Offscreen Image)
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, copyPipeline);
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
@@ -1027,8 +1047,8 @@ void Canvas::createCopyPipeline() {
 
     VkPipelineColorBlendAttachmentState ba{};
     ba.blendEnable = VK_TRUE;
-    ba.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    ba.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    ba.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    ba.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
     ba.colorBlendOp = VK_BLEND_OP_ADD;
     ba.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
     ba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
@@ -1181,6 +1201,105 @@ void Canvas::createFadePipeline() {
     pi.basePipelineHandle = VK_NULL_HANDLE;
 
     vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pi, nullptr, &fadePipeline);
+
+    vkDestroyShaderModule(device_, v, nullptr);
+    vkDestroyShaderModule(device_, f, nullptr);
+}
+
+void Canvas::createGridPipeline() {
+    auto vertCode = readFile("shaders/grid.vert.spv");
+    auto fragCode = readFile("shaders/grid.frag.spv");
+    VkShaderModule v = createShaderModule(vertCode);
+    VkShaderModule f = createShaderModule(fragCode);
+
+    VkPipelineShaderStageCreateInfo vertStageInfo{};
+    vertStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertStageInfo.module = v;
+    vertStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo fragStageInfo{};
+    fragStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragStageInfo.module = f;
+    fragStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo stages[] = {vertStageInfo, fragStageInfo};
+
+    VkPipelineVertexInputStateCreateInfo emptyInput{};
+    emptyInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAsm{};
+    inputAsm.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAsm.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkPipelineViewportStateCreateInfo vp{};
+    vp.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    vp.viewportCount = 1;
+    vp.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rs{};
+    rs.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rs.lineWidth = 1.0f;
+    rs.cullMode = VK_CULL_MODE_NONE;  // Quad might be flipped, safe to disable cull
+
+    VkPipelineMultisampleStateCreateInfo ms{};
+    ms.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    // Standard Alpha Blending
+    VkPipelineColorBlendAttachmentState ba{};
+    ba.blendEnable = VK_TRUE;
+    ba.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    ba.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    ba.colorBlendOp = VK_BLEND_OP_ADD;
+    ba.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    ba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    ba.alphaBlendOp = VK_BLEND_OP_ADD;
+    ba.colorWriteMask = 0xF;
+
+    VkPipelineColorBlendStateCreateInfo cb{};
+    cb.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    cb.attachmentCount = 1;
+    cb.pAttachments = &ba;
+
+    std::vector<VkDynamicState> ds = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dyn{};
+    dyn.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dyn.dynamicStateCount = static_cast<uint32_t>(ds.size());
+    dyn.pDynamicStates = ds.data();
+
+    VkPushConstantRange pc{};
+    pc.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pc.offset = 0;
+    pc.size = sizeof(PushConstants);
+
+    VkPipelineLayoutCreateInfo pl{};
+    pl.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pl.pushConstantRangeCount = 1;
+    pl.pPushConstantRanges = &pc;
+    // No descriptors needed if we don't read textures, but layout might require it if reused
+    // Grid shader doesn't read textures, but we can keep compat or empty.
+    // pl.setLayoutCount = 0;
+
+    vkCreatePipelineLayout(device_, &pl, nullptr, &gridPipelineLayout);
+
+    VkGraphicsPipelineCreateInfo pi{};
+    pi.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pi.stageCount = 2;
+    pi.pStages = stages;
+    pi.pVertexInputState = &emptyInput;
+    pi.pInputAssemblyState = &inputAsm;
+    pi.pViewportState = &vp;
+    pi.pRasterizationState = &rs;
+    pi.pMultisampleState = &ms;
+    pi.pColorBlendState = &cb;
+    pi.pDynamicState = &dyn;
+    pi.layout = gridPipelineLayout;
+    pi.renderPass = offscreenRenderPass;
+    pi.subpass = 0;
+
+    vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pi, nullptr, &gridPipeline);
 
     vkDestroyShaderModule(device_, v, nullptr);
     vkDestroyShaderModule(device_, f, nullptr);

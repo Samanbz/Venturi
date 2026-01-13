@@ -30,6 +30,10 @@ struct SimConfig {
     float zoomEnd = 50.0f;
     int zoomDuration = 2000;
 
+    // Grid Config
+    bool showGrid = true;
+    float gridSpacing = 100.0f;
+
     // Timing (Derived)
     int stepsPerFrame = 1;
 
@@ -64,7 +68,9 @@ struct SimConfig {
         marketParams.greed_stddev = 10.0f;
         marketParams.trend_decay = 0.9f;
         marketParams.target_inventory_mean = 0.0f;
-        marketParams.target_inventory_stddev = 2e2f;
+        marketParams.target_inventory_stddev = 1e2f;
+
+        marketParams.buyer_proportion = 0.5f;
     }
 
     /**
@@ -134,6 +140,13 @@ static SimConfig parseArgs(int argc, char** argv) {
             config.zoomDuration = std::stoi(argv[++i]);
         }
 
+        // --- Grid Config ---
+        else if (arg == "--no-grid") {
+            config.showGrid = false;
+        } else if (arg == "--grid-spacing" && i + 1 < argc) {
+            config.gridSpacing = std::stof(argv[++i]);
+        }
+
         // --- Market Parameters ---
         else if (arg == "--agents" && i + 1 < argc) {
             config.marketParams.num_agents = std::stoi(argv[++i]);
@@ -165,6 +178,8 @@ static SimConfig parseArgs(int argc, char** argv) {
             config.marketParams.greed_stddev = std::stof(argv[++i]);
         } else if (arg == "--trend-decay" && i + 1 < argc) {
             config.marketParams.trend_decay = std::stof(argv[++i]);
+        } else if (arg == "--buyers" && i + 1 < argc) {
+            config.marketParams.buyer_proportion = std::stof(argv[++i]);
         }
     }
 
