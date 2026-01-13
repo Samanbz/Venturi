@@ -14,6 +14,17 @@ find_package(Vulkan REQUIRED)
 find_package(glfw3 3.3 REQUIRED)
 find_package(glm REQUIRED)
 
+# ImGui & ImPlot
+set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/vendor/imgui)
+set(IMPLOT_DIR ${CMAKE_SOURCE_DIR}/vendor/implot)
+
+file(GLOB IMGUI_SOURCES 
+    "${IMGUI_DIR}/*.cpp"
+    "${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp"
+    "${IMGUI_DIR}/backends/imgui_impl_glfw.cpp"
+)
+file(GLOB IMPLOT_SOURCES "${IMPLOT_DIR}/*.cpp")
+
 # Recursively add all source files in src/
 file(GLOB_RECURSE VENTURI_SOURCES "src/*.cpp" "src/*.cu")
 list(FILTER VENTURI_SOURCES EXCLUDE REGEX ".*/src/main\\.cpp$")
@@ -21,11 +32,17 @@ list(FILTER VENTURI_SOURCES EXCLUDE REGEX ".*/src/main\\.cpp$")
 # Main library (shared between main executable and tests)
 add_library(venturi_lib
     ${VENTURI_SOURCES}
+    ${IMGUI_SOURCES}
+    ${IMPLOT_SOURCES}
 )
 
 set_property(TARGET venturi_lib PROPERTY CUDA_SEPARABLE_COMPILATION OFF)
 
-target_include_directories(venturi_lib PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(venturi_lib PUBLIC 
+    ${CMAKE_SOURCE_DIR}/src
+    ${IMGUI_DIR}
+    ${IMPLOT_DIR}
+)
 target_link_libraries(venturi_lib CUDA::cudart CUDA::curand Vulkan::Vulkan glfw glm::glm)
 
 # Copy shaders to the build directory so executables can find them

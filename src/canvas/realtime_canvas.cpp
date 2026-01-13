@@ -18,9 +18,18 @@ RealTimeCanvas::RealTimeCanvas(size_t numVertices, uint32_t width, uint32_t heig
     // Setup queues - needed for present
     QueueFamilyIndices indices = findQueueFamilies(physicalDevice_);
     vkGetDeviceQueue(device_, indices.presentFamily.value(), 0, &presentQueue_);
+
+    initImGui();
 }
 
 RealTimeCanvas::~RealTimeCanvas() {
+    vkDeviceWaitIdle(device_);
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImPlot::DestroyContext();
+    ImGui::DestroyContext();
+    vkDestroyDescriptorPool(device_, imguiPool_, nullptr);
+
     vkDestroySemaphore(device_, imageAvailableSemaphore, nullptr);
     for (auto fb : swapChainFramebuffers)
         vkDestroyFramebuffer(device_, fb, nullptr);
@@ -175,6 +184,8 @@ void RealTimeCanvas::createFramebuffers() {
 }
 
 void RealTimeCanvas::drawFrame(Simulation& sim, bool& running) {
+    renderUI(sim);
+
     vkWaitForFences(device_, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
     vkResetFences(device_, 1, &inFlightFence);
 
@@ -248,4 +259,134 @@ void RealTimeCanvas::run(Simulation& sim) {
         if (elapsed < frameDuration)
             std::this_thread::sleep_for(frameDuration - elapsed);
     }
+}
+void RealTimeCanvas::initImGui() {
+    // 1. Create Descriptor Pool for ImGui
+    VkDescriptorPoolSize pool_sizes[] = {
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
+    };
+    VkDescriptorPoolCreateInfo pool_info = {};
+    pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    pool_info.maxSets = 1;
+    pool_info.poolSizeCount = (uint32_t) std::size(pool_sizes);
+    pool_info.pPoolSizes = pool_sizes;
+    if (vkCreateDescriptorPool(device_, &pool_info, nullptr, &imguiPool_) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create ImGui descriptor pool");
+    }
+
+    // 2. Setup Context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImPlot::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    (void) io;
+
+    // Modern Dark Theme
+    ImGui::StyleColorsDark();
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.WindowRounding = 5.0f;
+    style.FrameRounding = 4.0f;
+    style.PopupRounding = 4.0f;
+    style.ScrollbarRounding = 0.0f;
+    style.GrabRounding = 4.0f;
+    style.WindowBorderSize = 0.0f;
+    style.FrameBorderSize = 0.0f;
+    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.1f, 0.1f, 0.13f, 0.95f);
+    style.Colors[ImGuiCol_Border] = ImVec4(0.2f, 0.2f, 0.25f, 0.5f);
+
+    // ImPlot Style
+    ImPlotStyle& pstyle = ImPlot::GetStyle();
+    pstyle.LineWeight = 2.0f;
+    pstyle.PlotBorderSize = 1.0f;
+    pstyle.Colors[ImPlotCol_FrameBg] = ImVec4(0.12f, 0.12f, 0.16f, 1.0f);
+    pstyle.Colors[ImPlotCol_Line] = ImVec4(0.2f, 0.6f, 1.0f, 1.0f);  // Nice Blue
+
+    // 3. Init Backends
+    ImGui_ImplGlfw_InitForVulkan(window_, true);
+    ImGui_ImplVulkan_InitInfo init_info = {};
+    init_info.Instance = instance_;
+    init_info.PhysicalDevice = physicalDevice_;
+    init_info.Device = device_;
+    init_info.QueueFamily = findQueueFamilies(physicalDevice_).graphicsFamily.value();
+    init_info.Queue = graphicsQueue_;
+    init_info.PipelineCache = VK_NULL_HANDLE;
+    init_info.DescriptorPool = imguiPool_;
+    init_info.MinImageCount = 2;  // Matches your swapchain
+    init_info.ImageCount = 2;
+    init_info.Allocator = nullptr;
+    init_info.CheckVkResultFn = nullptr;
+
+    // Updated InitInfo struct
+    init_info.PipelineInfoMain.RenderPass = renderPass;
+    init_info.PipelineInfoMain.Subpass = 0;
+    init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+
+    ImGui_ImplVulkan_Init(&init_info);
+
+    // Font upload is now handled automatically by the backend or on first frame.
+}
+
+void RealTimeCanvas::renderUI(Simulation& sim) {
+    // Update Data
+    float time = sim.state_.dt * sim.params_.time_delta;
+    priceHistory_.AddPoint(time, sim.state_.price);
+    pressureHistory_.AddPoint(time, sim.state_.pressure);
+
+    // Start Frame
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
+    // Create a Window
+    ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(600, 450), ImGuiCond_FirstUseEver);
+
+    ImGui::Begin("Market Microstructure", nullptr, ImGuiWindowFlags_NoCollapse);
+
+    ImGui::Text("Agents: %d", sim.params_.num_agents);
+    ImGui::Text("Price: %.2f", sim.state_.price);
+    ImGui::Text("Net Pressure: %.4f", sim.state_.pressure);
+    ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+
+    float historyDuration = priceHistory_.Span;
+
+    // Calculate reliable height relative to window
+    // Reserve specific space for text, divide rest by 2
+    float availableHeight = ImGui::GetContentRegionAvail().y;
+    float plotHeight = availableHeight * 0.5f;
+    if (plotHeight < 100.0f)
+        plotHeight = 100.0f;
+
+    if (ImPlot::BeginPlot("Asset Price (S_t)", ImVec2(-1, plotHeight), ImPlotFlags_NoInputs)) {
+        ImPlot::SetupAxis(ImAxis_X1, nullptr, ImPlotAxisFlags_NoTickLabels);
+        ImPlot::SetupAxis(ImAxis_Y1, nullptr, ImPlotAxisFlags_AutoFit);
+        ImPlot::SetupAxisLimits(ImAxis_X1, time - historyDuration, time, ImGuiCond_Always);
+
+        if (!priceHistory_.Data.empty()) {
+            ImPlot::PlotLine("Price", &priceHistory_.Time[0], &priceHistory_.Data[0],
+                             priceHistory_.Data.size());
+        }
+        ImPlot::EndPlot();
+    }
+
+    if (ImPlot::BeginPlot("Market Pressure (mu_t)", ImVec2(-1, plotHeight), ImPlotFlags_NoInputs)) {
+        ImPlot::SetupAxis(ImAxis_X1, "Time (s)");
+        ImPlot::SetupAxis(ImAxis_Y1, nullptr, ImPlotAxisFlags_AutoFit);
+        ImPlot::SetupAxisLimits(ImAxis_X1, time - historyDuration, time, ImGuiCond_Always);
+
+        if (!pressureHistory_.Data.empty()) {
+            ImPlot::PlotLine("Pressure", &pressureHistory_.Time[0], &pressureHistory_.Data[0],
+                             pressureHistory_.Data.size());
+        }
+        ImPlot::EndPlot();
+    }
+
+    ImGui::End();
+    ImGui::Render();
+}
+
+void RealTimeCanvas::drawUI(VkCommandBuffer cmd) {
+    ImDrawData* draw_data = ImGui::GetDrawData();
+    ImGui_ImplVulkan_RenderDrawData(draw_data, cmd);
 }

@@ -24,13 +24,15 @@ int main(int argc, char** argv) {
     int numAgents = 50000;  // Default
     int width = 0;
     int height = 0;
-    float latencyMean = 0.0f;
-    float latencyJitter = 0.0f;
+    float latencyMean = 2.0f;
+    float latencyJitter = 1.0f;
     int maxLatencySteps = 1024;  // Default buffer size
 
     int targetFPS = 60;
     float speedUp = 1.0f;
     float preferredDelta = 0.01f;  // 10ms stability target
+    float historyDuration = 30.0f;
+    float smoothingAlpha = 0.5f;  // 1.0 = No smoothing
 
     // Simple argument parsing
     for (int i = 1; i < argc; ++i) {
@@ -54,6 +56,10 @@ int main(int argc, char** argv) {
             targetFPS = std::stoi(argv[++i]);
         } else if (strcmp(argv[i], "--speedup") == 0 && i + 1 < argc) {
             speedUp = std::stof(argv[++i]);
+        } else if (strcmp(argv[i], "--history") == 0 && i + 1 < argc) {
+            historyDuration = std::stof(argv[++i]);
+        } else if (strcmp(argv[i], "--smooth") == 0 && i + 1 < argc) {
+            smoothingAlpha = std::stof(argv[++i]);
         }
     }
 
@@ -90,26 +96,26 @@ int main(int argc, char** argv) {
 
     params.time_delta = actualDelta;
     params.price_init = 100.0f;
-    params.price_randomness_stddev = 2.0f;
+    params.price_randomness_stddev = 1.5f;
     params.permanent_impact = 1e-6f;
-    params.temporary_impact = 0.05f;
+    params.temporary_impact = 0.1f;
     params.sph_smoothing_radius = 1.0f;
-    params.congestion_sensitivity = 0.05f;
+    params.congestion_sensitivity = 0.06f;
     int power = 1;
     while ((1 << power) < params.num_agents) {
         power++;
     }
     params.hash_table_size = (1 << (power + 1));
-    params.decay_rate = 1e-4f;
+    params.decay_rate = 3e-4f;
     params.mass_alpha = 0.001f;
     params.mass_beta = 0.3f;
     params.risk_mean = 1.0f;
     params.risk_stddev = 0.9f;
-    params.greed_mean = 1.0f;
-    params.greed_stddev = 1.0f;
+    params.greed_mean = 2.0f;
+    params.greed_stddev = 20.0f;
     params.trend_decay = 0.5f;
     params.target_inventory_mean = 0.0f;
-    params.target_inventory_stddev = 1e3f;
+    params.target_inventory_stddev = 1e2f;
 
     std::unique_ptr<Canvas> canvas;
 
@@ -124,8 +130,11 @@ int main(int argc, char** argv) {
             std::make_unique<OfflineCanvas>(params.num_agents, static_cast<uint32_t>(width),
                                             static_cast<uint32_t>(height), outputDir, numFrames);
     } else {
-        canvas = std::make_unique<RealTimeCanvas>(params.num_agents, static_cast<uint32_t>(width),
-                                                  static_cast<uint32_t>(height));
+        auto rtCanvas = std::make_unique<RealTimeCanvas>(
+            params.num_agents, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+        rtCanvas->setHistoryDuration(historyDuration);
+        rtCanvas->setSmoothingAlpha(smoothingAlpha);
+        canvas = std::move(rtCanvas);
     }
 
     canvas->setTargetFPS(targetFPS);
@@ -149,7 +158,7 @@ int main(int argc, char** argv) {
     // Initial boundary setup
     Boundaries boundaries = sim.getBoundaries();
     printBoundaries(boundaries);
-    canvas->setBoundaries(boundaries, 10.0f, 13.0f, true);
+    canvas->setBoundaries(boundaries, 10.0f, 10.0f, true);
 
     // Run the loop
     canvas->run(sim);

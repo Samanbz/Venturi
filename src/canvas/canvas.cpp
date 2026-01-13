@@ -545,12 +545,12 @@ void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer,
     push.p = glm::ortho(minX, maxX, maxY, minY, -1.0f, 1.0f);
     push.minC = minColor;
     push.maxC = maxColor;
-    push.w = 0.05f;
-    push.trailWeight = 0.005f;  // Alpha for trail accumulation
+    push.w = 0.1f;
+    push.trailWeight = 0.05f;  // Alpha for trail accumulation
 
     // Adaptive constrast based on symmetricity
     bool symmetric = (minColor < 0.0f);
-    push.contrast = symmetric ? 0.7f : 0.2f;
+    push.contrast = symmetric ? 1.3f : 1.0f;  // >1.0 makes a smooth bell-curve blend to white
 
     vkCmdPushConstants(commandBuffer, pipelineLayout,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
@@ -594,12 +594,15 @@ void Canvas::recordCommandBuffer(VkCommandBuffer commandBuffer,
 
     // Points (Live)
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-    push.w = 1.0f;
+    push.w = 10.8f;
+    push.trailWeight = 0.8f;  // Make live points fully opaque
     vkCmdPushConstants(commandBuffer, pipelineLayout,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        sizeof(PushConstants), &push);
     vkCmdBindVertexBuffers(commandBuffer, 0, 3, vBufs, offsets);
     vkCmdDraw(commandBuffer, static_cast<uint32_t>(bufferSize), 1, 0, 0);
+
+    drawUI(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
 
@@ -911,7 +914,7 @@ void Canvas::createGraphicsPipeline() {
     VkPushConstantRange range{};
     range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     range.offset = 0;
-    range.size = sizeof(glm::mat4) + 3 * sizeof(float);
+    range.size = sizeof(PushConstants);
 
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
