@@ -81,6 +81,8 @@ struct MarketParams {
     float target_inventory_stddev;  ///< StdDev Target Inventory
 
     float buyer_proportion;  ///< Proportion of agents initialized as buyers (0.0 to 1.0)
+
+    float inertia;  ///< Speed smoothing factor (0.0 = no inertia, 1.0 = full freeze)
 };
 
 /**

@@ -52,25 +52,27 @@ struct SimConfig {
 
         marketParams.price_init = 100.0f;
         marketParams.price_randomness_stddev = 1.5f;
-        marketParams.permanent_impact = 1e-6f;
-        marketParams.temporary_impact = 50.0f;
-        marketParams.sph_smoothing_radius = 500.0f;
-        marketParams.congestion_sensitivity = 0.6f;
+        marketParams.permanent_impact = 1e-8f;
+        marketParams.temporary_impact = 2.0f;
+        marketParams.sph_smoothing_radius = 10000.0f;
+        marketParams.congestion_sensitivity = 5.0f;
 
         marketParams.hash_table_size = 0;  // Calculated in finalize()
 
         marketParams.decay_rate = 1e-4f;
         marketParams.mass_alpha = 0.01f;
-        marketParams.mass_beta = 0.1f;
+        marketParams.mass_beta = 0.9f;
         marketParams.risk_mean = 1.0f;
         marketParams.risk_stddev = 1.5f;
         marketParams.greed_mean = 5.0f;
         marketParams.greed_stddev = 10.0f;
         marketParams.trend_decay = 0.9f;
         marketParams.target_inventory_mean = 0.0f;
-        marketParams.target_inventory_stddev = 0e2f;
+        marketParams.target_inventory_stddev = 5e2f;
 
         marketParams.buyer_proportion = 0.5f;
+
+        marketParams.inertia = 0.1f;  // High inertia to stabilize large radius/low density
     }
 
     /**

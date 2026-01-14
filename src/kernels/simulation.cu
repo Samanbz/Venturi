@@ -1,5 +1,6 @@
 #include <curand_kernel.h>
 
+#include <cstdio>
 #include <ctime>
 
 #include "common.cuh"
@@ -79,10 +80,10 @@ __global__ void computeLocalDensitiesKernel(const float* __restrict__ inventory,
 
     // Constants
     float h2 = params.sph_smoothing_radius * params.sph_smoothing_radius;
-    // Precompute powf(radius, 9)
-    float h9 = h2 * h2 * h2 * params.sph_smoothing_radius * params.sph_smoothing_radius *
-               params.sph_smoothing_radius;
-    float poly6 = 315.0f / (64.0f * 3.14159265f * h9);
+    // Precompute powf(radius, 8) for 2D Poly6 Kernel
+    // Poly6 2D: W(r,h) = 4/(pi*h^8) * (h^2 - r^2)^3
+    float h8 = h2 * h2 * h2 * h2;
+    float poly6 = 4.0f / (3.14159265f * h8);
 
     float density_acc = 0.0f;
 
@@ -193,11 +194,16 @@ __global__ void updateAgentStateKernel(const float* __restrict__ speed_term_1,
 
     float local_temporary_impact =
         params.temporary_impact * (1 + params.congestion_sensitivity * local_density[idx]);
-    speed[idx] = pressure * speed_term_1[idx] - speed_term_2[idx];
 
-    // Add Greed Term
-    // speed^a = speed^a + (greed^a * belief)/2*temporary_impact (Assuming local impact)
-    speed[idx] += (greed[idx] * my_belief) / (2.0f * local_temporary_impact);
+    // Calculate Target Speed
+    float target_speed = pressure * speed_term_1[idx] - speed_term_2[idx];
+    target_speed += (greed[idx] * my_belief) / (2.0f * local_temporary_impact);
+
+    // Apply Inertia
+    // speed[t] = inertia * speed[t-1] + (1 - inertia) * target_speed
+    // But since speed[idx] is current state, we just update it.
+    float current_speed = speed[idx];
+    speed[idx] = params.inertia * current_speed + (1.0f - params.inertia) * target_speed;
 
     float new_inv = inventory[idx] + speed[idx] * params.time_delta;
     // Clamp based on direction relative to target
