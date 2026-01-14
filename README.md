@@ -19,7 +19,7 @@ Visualization of agent inventory (y axis) vs. execution cost (x axis). Color ind
   <video src="https://github.com/user-attachments/assets/226fa001-5e23-4d3b-a44d-227098cda3da" width="75%" autoplay loop muted></video>
   <p>
     <i>100K agents, 50% buyers, 60FPS at 2x speed.</i> <br />
-      The wave patterns are an emergent artifact of low temporary market impact combined with high congestion sensitivity. Essentially, while the immediate cost of crossing the spread is low, the cost of 'traffic' is high. Agents rush into a price level, spike the local density, and are forced to retreat like a compressible fluid hitting a wall, creating these oscillating pressure waves.
+      The wave patterns are an emergent artifact of low temporary market impact combined with high congestion sensitivity (and a tiny bit of inertia). Essentially, while the immediate cost of crossing the spread is low, the cost of 'traffic' is high. Agents rush into a price level, spike the local density, and are forced to retreat like a compressible fluid hitting a wall, creating these oscillating pressure waves.
   </p>
 </div>
 
