@@ -1,5 +1,3 @@
-
-https://github.com/user-attachments/assets/9d686add-b5a1-4562-bcfc-95cc003162f5
 # Real-Time Market Microstructure Simulation
 
 ![Language](https://img.shields.io/badge/language-C%2B%2B17-blue)
