@@ -15,7 +15,13 @@ Crucially, the simulation treats market liquidity as a physical fluid. Using Smo
 
 Visualization of agent inventory vs. execution cost. Color indicated continuous trading speed: red for sellers, green for buyers. Top-left: aggregate market pressure and price.
 
-[placeholder for gif..., coming soon]
+<div align="center">
+  <video src="https://github.com/user-attachments/assets/226fa001-5e23-4d3b-a44d-227098cda3da" width="75%" autoplay loop muted></video>
+  <p>
+    <i>100K agents, 50% buyers, 60FPS at 2x speed.</i> <br />
+      The wave patterns are an emergent artifact of low temporary market impact combined with high congestion sensitivity. Essentially, while the immediate cost of crossing the spread is low, the cost of 'traffic' is high. Agents rush into a price level, spike the local density, and are forced to retreat like a compressible fluid hitting a wall, creating these oscillating pressure waves.
+  </p>
+</div>
 
 ---
 
