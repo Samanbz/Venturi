@@ -1,3 +1,5 @@
+
+https://github.com/user-attachments/assets/9d686add-b5a1-4562-bcfc-95cc003162f5
 # Real-Time Market Microstructure Simulation
 
 ![Language](https://img.shields.io/badge/language-C%2B%2B17-blue)
@@ -13,7 +15,7 @@ Crucially, the simulation treats market liquidity as a physical fluid. Using Smo
 
 ## Demo
 
-Visualization of agent inventory vs. execution cost. Color indicated continuous trading speed: red for sellers, green for buyers. Top-left: aggregate market pressure and price.
+Visualization of agent inventory (y axis) vs. execution cost (x axis). Color indicates continuous trading speed: red for sellers, green for buyers. Top-left: aggregate market pressure and price.
 
 <div align="center">
   <video src="https://github.com/user-attachments/assets/226fa001-5e23-4d3b-a44d-227098cda3da" width="75%" autoplay loop muted></video>
@@ -22,6 +24,28 @@ Visualization of agent inventory vs. execution cost. Color indicated continuous 
       The wave patterns are an emergent artifact of low temporary market impact combined with high congestion sensitivity. Essentially, while the immediate cost of crossing the spread is low, the cost of 'traffic' is high. Agents rush into a price level, spike the local density, and are forced to retreat like a compressible fluid hitting a wall, creating these oscillating pressure waves.
   </p>
 </div>
+
+<br>
+
+<h3>Some less stable, but interesting examples:</h3>
+
+<table width="100%">
+  <tr>
+    <td width="50%" align="center">
+      <video src="https://github.com/user-attachments/assets/0afb338b-b937-48c7-9cf1-807a3be02338" width="100%" autoplay loop muted controls></video>
+      <br>
+      <sub><i>100K agents, 50/50. Zoomed in 10x.</i></sub>
+    </td>
+    <td width="50%" align="center">
+      <video src="https://github.com/user-attachments/assets/62281e5c-3a3f-47c6-8f11-626331cfdbd1" width="100%" autoplay loop muted controls></video>
+      <br>
+      <sub><i>100K agents, 100% sellers. Taders far from the crowd sell quickly until they reach the crowd.</i></sub>
+    </td>
+  </tr>
+</table>
+
+
+
 
 ---
 
