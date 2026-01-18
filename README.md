@@ -210,5 +210,5 @@ To determine the maximum agent capacity for your hardware or detail performance:
 
 - **Interactive UI**: Adding parameter sliders to adjust Risk/Greed in real-time.
 - **Camera Control**: Implementing free-cam movement to explore local clusters.
-- **Optimize Spatial Hashing**: Seems to be the performance bottleneck, especially as agents converge to the center and get closer to each other. Started from sorting by sorting by spatial hash for better memory coalescence, though the current linked list approach proves to be faster. I think there's still room for improvement.
+- **Optimize Spatial Hashing**: Seems to be the performance bottleneck, especially as agents converge to the center and get closer to each other. Started by sorting by spatial hash for better memory coalescence, though the current linked list approach proves to be faster. I think there's still room for improvement.
 - Currently the agents are undisturbed. Once the initial parameters are set nothing really gets in their way to reach their target inventory other than local congestion and their risk aversion. It'd be interesting to throw in disruptions at random or will. Could maybe simulate a crash?
